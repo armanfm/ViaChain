@@ -3,9 +3,20 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IDriverNFT {
+    function mintDriverNFT(address driver, string calldata metadataCID) external returns (uint256);
+    function revokeDriverNFT(address driver) external;
+}
+
 contract ViaChainGovernance is Ownable {
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address nftAddress) Ownable(msg.sender) {
+        driverNFT = IDriverNFT(nftAddress);
+    }
+
+    // ================= NFT =================
+
+    IDriverNFT public driverNFT;
 
     // ================= ENUMS =================
 
@@ -30,41 +41,22 @@ contract ViaChainGovernance is Ownable {
         address driver;
         string vehicleModel;
         string vehiclePlate;
-        string vehicleCID; // IPFS
+        string vehicleCID;
         uint256 requestedAt;
         DriverStatus status;
         Category category;
         uint256 pricePerKmWei;
     }
 
-    // ================= STORAGE =================
-
     mapping(address => DriverProfile) private driverProfiles;
 
     // ================= EVENTS =================
 
-    event DriverRequested(
-        address indexed driver,
-        string vehicleModel,
-        string vehiclePlate,
-        uint256 timestamp
-    );
-
-    event DriverApproved(
-        address indexed driver,
-        Category category,
-        uint256 timestamp
-    );
-
-    event DriverRejected(address indexed driver, uint256 timestamp);
-
-    event DriverRevoked(address indexed driver, uint256 timestamp);
-
-    event DriverPriceUpdated(
-        address indexed driver,
-        uint256 oldPrice,
-        uint256 newPrice
-    );
+    event DriverRequested(address indexed driver);
+    event DriverApproved(address indexed driver, Category category);
+    event DriverRejected(address indexed driver);
+    event DriverRevoked(address indexed driver);
+    event DriverPriceUpdated(address indexed driver, uint256 newPrice);
 
     // ================= REQUEST =================
 
@@ -83,7 +75,7 @@ contract ViaChainGovernance is Ownable {
             profile.status == DriverStatus.NONE ||
             profile.status == DriverStatus.REJECTED ||
             profile.status == DriverStatus.REVOKED,
-            "Already requested or active"
+            "Already requested"
         );
 
         driverProfiles[msg.sender] = DriverProfile({
@@ -97,18 +89,12 @@ contract ViaChainGovernance is Ownable {
             pricePerKmWei: 0
         });
 
-        emit DriverRequested(
-            msg.sender,
-            vehicleModel,
-            vehiclePlate,
-            block.timestamp
-        );
+        emit DriverRequested(msg.sender);
     }
 
     // ================= APPROVAL =================
 
     function approveDriver(address driver, Category category) external onlyOwner {
-        require(driver != address(0), "Invalid driver");
         require(category != Category.NONE, "Invalid category");
 
         DriverProfile storage profile = driverProfiles[driver];
@@ -117,24 +103,22 @@ contract ViaChainGovernance is Ownable {
         profile.status = DriverStatus.APPROVED;
         profile.category = category;
 
-        emit DriverApproved(driver, category, block.timestamp);
+        // 🔥 MINT AUTOMÁTICO DO NFT
+        driverNFT.mintDriverNFT(driver, profile.vehicleCID);
+
+        emit DriverApproved(driver, category);
     }
 
     function rejectDriver(address driver) external onlyOwner {
-        require(driver != address(0), "Invalid driver");
-
         DriverProfile storage profile = driverProfiles[driver];
         require(profile.status == DriverStatus.PENDING, "Not pending");
 
         profile.status = DriverStatus.REJECTED;
-        profile.category = Category.NONE;
 
-        emit DriverRejected(driver, block.timestamp);
+        emit DriverRejected(driver);
     }
 
     function revokeDriver(address driver) external onlyOwner {
-        require(driver != address(0), "Invalid driver");
-
         DriverProfile storage profile = driverProfiles[driver];
         require(profile.status == DriverStatus.APPROVED, "Not approved");
 
@@ -142,10 +126,13 @@ contract ViaChainGovernance is Ownable {
         profile.category = Category.NONE;
         profile.pricePerKmWei = 0;
 
-        emit DriverRevoked(driver, block.timestamp);
+        // 🔥 QUEIMA NFT
+        driverNFT.revokeDriverNFT(driver);
+
+        emit DriverRevoked(driver);
     }
 
-    // ================= DRIVER ACTION =================
+    // ================= DRIVER =================
 
     function setMyPricePerKm(uint256 newPrice) external {
         require(newPrice > 0, "Invalid price");
@@ -153,10 +140,9 @@ contract ViaChainGovernance is Ownable {
         DriverProfile storage profile = driverProfiles[msg.sender];
         require(profile.status == DriverStatus.APPROVED, "Not approved");
 
-        uint256 oldPrice = profile.pricePerKmWei;
         profile.pricePerKmWei = newPrice;
 
-        emit DriverPriceUpdated(msg.sender, oldPrice, newPrice);
+        emit DriverPriceUpdated(msg.sender, newPrice);
     }
 
     // ================= GETTERS =================
@@ -171,10 +157,6 @@ contract ViaChainGovernance is Ownable {
 
     function getDriverPrice(address driver) external view returns (uint256) {
         return driverProfiles[driver].pricePerKmWei;
-    }
-
-    function getVehicleCID(address driver) external view returns (string memory) {
-        return driverProfiles[driver].vehicleCID;
     }
 
     function getDriverProfile(address driver)
