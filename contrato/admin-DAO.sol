@@ -5,6 +5,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract ViaChainGovernance is Ownable {
 
+    constructor() Ownable(msg.sender) {}
+
+    // ================= ENUMS =================
+
     enum Category {
         NONE,
         BASICO,
@@ -20,6 +24,8 @@ contract ViaChainGovernance is Ownable {
         REVOKED
     }
 
+    // ================= STRUCT =================
+
     struct DriverProfile {
         address driver;
         string vehicleModel;
@@ -30,6 +36,8 @@ contract ViaChainGovernance is Ownable {
         Category category;
         uint256 pricePerKmWei;
     }
+
+    // ================= STORAGE =================
 
     mapping(address => DriverProfile) private driverProfiles;
 
@@ -89,12 +97,18 @@ contract ViaChainGovernance is Ownable {
             pricePerKmWei: 0
         });
 
-        emit DriverRequested(msg.sender, vehicleModel, vehiclePlate, block.timestamp);
+        emit DriverRequested(
+            msg.sender,
+            vehicleModel,
+            vehiclePlate,
+            block.timestamp
+        );
     }
 
     // ================= APPROVAL =================
 
     function approveDriver(address driver, Category category) external onlyOwner {
+        require(driver != address(0), "Invalid driver");
         require(category != Category.NONE, "Invalid category");
 
         DriverProfile storage profile = driverProfiles[driver];
@@ -107,6 +121,8 @@ contract ViaChainGovernance is Ownable {
     }
 
     function rejectDriver(address driver) external onlyOwner {
+        require(driver != address(0), "Invalid driver");
+
         DriverProfile storage profile = driverProfiles[driver];
         require(profile.status == DriverStatus.PENDING, "Not pending");
 
@@ -117,6 +133,8 @@ contract ViaChainGovernance is Ownable {
     }
 
     function revokeDriver(address driver) external onlyOwner {
+        require(driver != address(0), "Invalid driver");
+
         DriverProfile storage profile = driverProfiles[driver];
         require(profile.status == DriverStatus.APPROVED, "Not approved");
 
