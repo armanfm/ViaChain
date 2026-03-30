@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts@4.9.3/access/Ownable.sol";
+import "@openzeppelin/contracts@4.9.3/security/ReentrancyGuard.sol";
 
 interface IGovernance {
     function isApprovedDriver(address driver) external view returns (bool);
@@ -117,12 +117,13 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         _;
     }
 
-    constructor(address governanceAddress) Ownable(msg.sender) {
+    constructor(address governanceAddress) {
         require(governanceAddress != address(0), "Invalid governance address");
         governance = IGovernance(governanceAddress);
     }
 
     function setSystemOperator(address newOperator) external onlyOwner {
+        require(newOperator != address(0), "Invalid operator");
         address oldOperator = systemOperator;
         systemOperator = newOperator;
         emit SystemOperatorUpdated(oldOperator, newOperator);
@@ -180,8 +181,9 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         require(msg.sender == ride.driver, "Only driver can reject");
         require(ride.status == RideStatus.CREATED, "Invalid ride state");
 
-        ride.status = RideStatus.DRIVER_REJECTED;
         uint256 amount = ride.quotedPriceWei;
+
+        ride.status = RideStatus.DRIVER_REJECTED;
         ride.quotedPriceWei = 0;
 
         (bool success, ) = payable(ride.passenger).call{value: amount}("");
@@ -200,8 +202,9 @@ contract RideEscrow is ReentrancyGuard, Ownable {
             "Ride already started"
         );
 
-        ride.status = RideStatus.CANCELLED;
         uint256 amount = ride.quotedPriceWei;
+
+        ride.status = RideStatus.CANCELLED;
         ride.quotedPriceWei = 0;
 
         (bool success, ) = payable(ride.passenger).call{value: amount}("");
