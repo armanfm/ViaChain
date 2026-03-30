@@ -137,4 +137,4 @@ Este projeto é um **MVP (Minimum Viable Product)** com:
 
 ## 👨‍💻 Autor
 
-**Armando José Freire de Melo**
+**Armando Freire**
