@@ -17,6 +17,7 @@
     #hinfo{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .badge{font-size:.78rem;background:var(--card);border:1px solid var(--border);padding:5px 10px;border-radius:20px;display:none}
     #bbal{color:var(--green)}#bwallet{color:var(--muted)}
+    #bethprice{color:var(--yellow);display:none}
     .btn{padding:10px 18px;border:none;border-radius:var(--r);cursor:pointer;font-size:.88rem;font-weight:600;transition:all .18s}
     .bp{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
     .bp:hover{opacity:.9;transform:translateY(-1px)}
@@ -102,6 +103,7 @@
 <header>
   <div class="logo">ViaChain</div>
   <div id="hinfo">
+    <span class="badge" id="bethprice"></span>
     <span class="badge" id="bbal"></span>
     <span class="badge" id="bwallet"></span>
   </div>
@@ -144,6 +146,7 @@
       <div class="stc"><div class="stv" id="ndrivers">0</div><div class="stl">Motoristas aprovados</div></div>
       <div class="stc"><div class="stv" id="npending">0</div><div class="stl">Pendentes</div></div>
       <div class="stc"><div class="stv" id="nbal">—</div><div class="stl">Saldo ETH</div></div>
+      <div class="stc"><div class="stv" id="nethpricebrl" style="color:var(--yellow)">—</div><div class="stl">ETH / BRL (Chainlink)</div></div>
     </div>
     <div class="tabs">
       <button class="tab on" onclick="tab('pass')">Passageiro</button>
@@ -164,7 +167,8 @@
         </div>
         <div class="sgrid" style="margin:10px 0">
           <div class="sc"><div class="sl">Preco/km</div><div class="sv" id="qp">—</div></div>
-          <div class="sc"><div class="sl">Total</div><div class="sv" id="qt">—</div></div>
+          <div class="sc"><div class="sl">Total ETH</div><div class="sv" id="qt">—</div></div>
+          <div class="sc"><div class="sl">Total BRL (Chainlink)</div><div class="sv" id="qtbrl" style="color:var(--yellow)">—</div></div>
           <div class="sc"><div class="sl">Categoria</div><div class="sv" id="qc">—</div></div>
         </div>
         <div class="ra">
@@ -275,6 +279,13 @@ const AESC=[
   "event RideCreated(uint256 indexed rideId,address indexed passenger,address indexed driver,uint256 quotedPriceWei,uint256 createdAt)"
 ];
 
+/* ── ORACLE ABI + ENDERECO ── */
+const AORACLE=["function getETHPrice() view returns (int256)"];
+const ORACLE_ADDR="0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07";
+let CO=null;
+let ethUSD=0;
+const BRL_RATE=5.85;
+
 /* ── MAPS ── */
 const CAT={0:"Nenhuma",1:"Basico",2:"Conforto",3:"Luxo"};
 const DS={0:"Nenhum",1:"Pendente",2:"Aprovado",3:"Rejeitado",4:"Revogado"};
@@ -320,11 +331,24 @@ function tt(title,msg,type="i"){
   c.appendChild(el);setTimeout(()=>el.remove(),5500);
 }
 
-/* ════════════════════════════════
-   PASSO 1 — CONECTAR METAMASK
-   eth_requestAccounts PRIMEIRO
-   (sem verificacao de rede aqui)
-════════════════════════════════ */
+/* ── ORACLE ── */
+async function carregarPrecoETH(){
+  try{
+    const price=await CO.getETHPrice();
+    ethUSD=Number(price)/1e8;
+    const el=document.getElementById("nethpricebrl");
+    if(el) el.textContent="R$ "+(ethUSD*BRL_RATE).toFixed(2);
+    const hd=document.getElementById("bethprice");
+    if(hd){hd.textContent="ETH R$ "+(ethUSD*BRL_RATE).toFixed(2);hd.style.display="inline";}
+    lg("Oraculo Chainlink: ETH R$ "+(ethUSD*BRL_RATE).toFixed(2),"s");
+  }catch(e){
+    console.warn("Oracle error:",e);
+    ethUSD=0;
+    const el=document.getElementById("nethpricebrl");
+    if(el) el.textContent="Indisponivel";
+  }
+}
+
 async function conectar(){
   if(!window.ethereum){
     tt("MetaMask nao encontrada","Instale a extensao MetaMask.","e");
@@ -332,53 +356,33 @@ async function conectar(){
   }
   try{
     lg("Abrindo MetaMask...","p");
-
-    /* PEDE CONTAS — isso abre o popup do MetaMask */
-    const contas = await window.ethereum.request({method:"eth_requestAccounts"});
-
-    if(!contas||contas.length===0){
-      throw new Error("Nenhuma conta autorizada.");
-    }
-
+    const contas=await window.ethereum.request({method:"eth_requestAccounts"});
+    if(!contas||contas.length===0) throw new Error("Nenhuma conta autorizada.");
     P=new ethers.BrowserProvider(window.ethereum);
     SG=await P.getSigner();
     me=await SG.getAddress();
-
     const bal=await P.getBalance(me);
     const ethBal=Number(ethers.formatEther(bal)).toFixed(4);
-
     document.getElementById("bwallet").textContent=sh(me);
     document.getElementById("bwallet").style.display="inline";
     document.getElementById("bbal").textContent=ethBal+" ETH";
     document.getElementById("bbal").style.display="inline";
-
     lg("Conectado: "+sh(me),"s");
     tt("MetaMask conectada!",sh(me)+" — "+ethBal+" ETH","s");
-
-    /* MOSTRA TELA DE ENDERECOS */
     document.getElementById("s1").style.display="none";
     document.getElementById("s2").style.display="block";
-
-    /* Preenche campos com o que foi salvo antes */
     const saved=sv();
     document.getElementById("anft").value=saved.nft||"";
     document.getElementById("agov").value=saved.gov||"";
     document.getElementById("aesc").value=saved.esc||"";
-
-
-
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
-
   }catch(e){
     lg("Erro: "+fe2(e),"e");
     tt("Erro de conexao",fe2(e),"e");
   }
 }
 
-/* ════════════════════════════════
-   PASSO 2 — LIGAR CONTRATOS
-════════════════════════════════ */
 async function ligarContratos(){
   const eb=document.getElementById("errbox");
   eb.style.display="none";
@@ -386,34 +390,27 @@ async function ligarContratos(){
     const nft=document.getElementById("anft").value.trim();
     const gov=document.getElementById("agov").value.trim();
     const esc=document.getElementById("aesc").value.trim();
-
     if(!nft||!gov||!esc) throw new Error("Preencha os 3 enderecos.");
     if(!ethers.isAddress(nft)) throw new Error("Endereco DriverNFT invalido.");
     if(!ethers.isAddress(gov)) throw new Error("Endereco Governance invalido.");
     if(!ethers.isAddress(esc)) throw new Error("Endereco RideEscrow invalido.");
-
     lg("Verificando contratos...","p");
-
-    const [c1,c2,c3]=await Promise.all([
-      P.getCode(nft),P.getCode(gov),P.getCode(esc)
-    ]);
+    const [c1,c2,c3]=await Promise.all([P.getCode(nft),P.getCode(gov),P.getCode(esc)]);
     if(c1==="0x") throw new Error("DriverNFT: sem contrato nesse endereco.");
     if(c2==="0x") throw new Error("Governance: sem contrato nesse endereco.");
     if(c3==="0x") throw new Error("RideEscrow: sem contrato nesse endereco.");
-
     AD={nft:ethers.getAddress(nft),gov:ethers.getAddress(gov),esc:ethers.getAddress(esc)};
     ss(AD);
-
     CN=new ethers.Contract(AD.nft,ANFT,SG);
     CG=new ethers.Contract(AD.gov,AGOV,SG);
     CE=new ethers.Contract(AD.esc,AESC,SG);
-
+    /* ── ORACLE ── */
+    CO=new ethers.Contract(ORACLE_ADDR,AORACLE,P);
+    await carregarPrecoETH();
     lg("Contratos OK!","s");
-    tt("Contratos conectados","DriverNFT + Governance + Escrow","s");
-
+    tt("Contratos conectados","DriverNFT + Governance + Escrow + Oracle","s");
     document.getElementById("s2").style.display="none";
     document.getElementById("s3").style.display="block";
-
     await refresh();
   }catch(e){
     eb.textContent=fe2(e);
@@ -422,10 +419,8 @@ async function ligarContratos(){
   }
 }
 
-/* ════════════════════════════════
-   REFRESH
-════════════════════════════════ */
 async function refresh(){
+  await carregarPrecoETH();
   await carregarState();
   await renderHeader();
   renderStatus();
@@ -488,7 +483,8 @@ function renderStatus(){
     <div class="sc"><div class="sl">RideEscrow</div><div class="sv">${H(sh(AD.esc))}</div></div>
     <div class="sc"><div class="sl">NFT→Gov</div><div class="sv ${ok1?"ok":"bad"}">${ok1?"✅ OK":"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">Gov→NFT</div><div class="sv ${ok2?"ok":"bad"}">${ok2?"✅ OK":"❌ Verificar"}</div></div>
-    <div class="sc"><div class="sl">Escrow→Gov</div><div class="sv ${ok3?"ok":"bad"}">${ok3?"✅ OK":"❌ Verificar"}</div></div>`;
+    <div class="sc"><div class="sl">Escrow→Gov</div><div class="sv ${ok3?"ok":"bad"}">${ok3?"✅ OK":"❌ Verificar"}</div></div>
+    <div class="sc"><div class="sl">Oracle Chainlink</div><div class="sv ok">✅ ${ethUSD>0?"ETH R$ "+(ethUSD*BRL_RATE).toFixed(2):"Carregando..."}</div></div>`;
   document.getElementById("cnote").innerHTML=
     (ok1?"✅":"❌ <b>Admin → DriverNFT.setGovernance()</b> precisa ser chamado!")+
     (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)));
@@ -496,7 +492,7 @@ function renderStatus(){
 
 async function carregarDrivers(){
   const lb=await P.getBlockNumber();
-  const fb=Math.max(0,lb-5000); // limita range pra RPC nao cortar
+  const fb=Math.max(0,lb-5000);
   let evs=[[],[],[],[],[]];
   try{
     evs=await Promise.all([
@@ -515,14 +511,11 @@ async function carregarDrivers(){
     const a=e.args?.driver||e.args?.[0];
     if(a&&ethers.isAddress(a))set.add(a.toLowerCase());
   }
-  // FALLBACK: sempre tenta carregar o proprio perfil direto do contrato
   set.add(me.toLowerCase());
-  // FALLBACK 2: tenta enderecos salvos no localStorage
   try{
     const cached=JSON.parse(localStorage.getItem("vc_known_drivers")||"[]");
     for(const addr of cached){if(ethers.isAddress(addr))set.add(addr.toLowerCase())}
   }catch{}
-
   const list=[];
   for(const al of set){
     const a=ethers.getAddress(al);
@@ -532,7 +525,6 @@ async function carregarDrivers(){
     const hn=await sc(()=>CN.hasActiveNFT(a),false);
     list.push({...p,appr,hn,pe:fe(p.priceWei)});
   }
-  // salva enderecos conhecidos pro fallback futuro
   try{localStorage.setItem("vc_known_drivers",JSON.stringify(list.map(d=>d.addr)))}catch{}
   list.sort((a,b)=>(a.status===1?0:1)-(b.status===1?0:1)||b.reqAt-a.reqAt);
   ST.drivers=list;
@@ -569,20 +561,32 @@ function quote(){
   const addr=document.getElementById("dsel").value;
   const km=Number(document.getElementById("rkm").value||0);
   const d=ST.drivers.find(x=>x.addr.toLowerCase()===addr?.toLowerCase());
-  if(!d){["qp","qt","qc"].forEach(x=>document.getElementById(x).textContent="—");return}
+  if(!d){
+    ["qp","qt","qc","qtbrl"].forEach(x=>document.getElementById(x).textContent="—");
+    return;
+  }
   const pw=BigInt(d.priceWei),tot=pw*BigInt(Math.max(km,0));
+  const totETH=Number(ethers.formatEther(tot));
   document.getElementById("qp").textContent=d.pe+" ETH/km";
   document.getElementById("qt").textContent=fe(tot)+" ETH";
   document.getElementById("qc").textContent=CAT[d.cat]||"—";
+  /* ORACLE — calcula total em USD */
+  if(ethUSD>0){
+    const brl=(totETH*ethUSD*BRL_RATE).toFixed(2);
+    document.getElementById("qtbrl").textContent="R$ "+brl;
+  } else {
+    document.getElementById("qtbrl").textContent="Oraculo indisponivel";
+  }
 }
 
 function rc(r,btns){
   const chip=RC[r.st]||"cbl";
+  const usd=ethUSD>0?"R$ "+(Number(ethers.formatEther(r.qw))*ethUSD*BRL_RATE).toFixed(2):"";
   return`<div class="rc"><div class="rm">
     <div class="rid">#${r.id} · ${H(fd(r.cAt))}</div>
     <div class="rro">${H(r.or)} → ${H(r.de)}</div>
     <div class="rd">
-      <span class="chip cgr">${H(fe(r.qw))} ETH</span>
+      <span class="chip cgr">${H(fe(r.qw))} ETH ${usd}</span>
       <span class="chip ${chip}">${H(RS[r.st]||"—")}</span>
       <span class="chip cpu">${H(String(r.km))} km</span>
       <span class="chip cbl">${H(sh(r.driv))}</span>
@@ -609,7 +613,8 @@ function renderMotoristas(){
   if(!ap.length){el.innerHTML=`<div class="empty"><div class="ei">👤</div>Nenhum motorista aprovado.</div>`;return}
   el.innerHTML=ap.map(d=>{
     const ini=(d.model||"DR").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
-    return`<div class="dc"><div class="dav">${H(ini)}</div><div class="din"><div class="dn">${H(sh(d.addr))}</div><div class="dd">${H(d.model)} · ${H(d.plate)} · ${H(CAT[d.cat]||"—")} · ${H(d.pe)} ETH/km</div></div><span class="chip cgr">Aprovado</span></div>`;
+    const usdkm=ethUSD>0?"≈ R$ "+(Number(d.pe)*ethUSD*BRL_RATE).toFixed(4)+"/km":"";
+    return`<div class="dc"><div class="dav">${H(ini)}</div><div class="din"><div class="dn">${H(sh(d.addr))}</div><div class="dd">${H(d.model)} · ${H(d.plate)} · ${H(CAT[d.cat]||"—")} · ${H(d.pe)} ETH/km ${usdkm}</div></div><span class="chip cgr">Aprovado</span></div>`;
   }).join("");
 }
 
@@ -674,7 +679,6 @@ function renderAdmNotice(){
   ].join("<br>");
 }
 
-/* ════ TX HELPER ════ */
 async function tx(msg,fn,ok,det){
   lg(msg,"p");tt("Aguardando MetaMask","Confirme a transacao.","p");
   try{
@@ -682,13 +686,11 @@ async function tx(msg,fn,ok,det){
     lg("Tx enviada, aguardando confirmacao...","p");
     await t.wait();
     lg(ok,"s");tt("Sucesso",det,"s");
-    // espera 2s pro RPC indexar o bloco novo antes de recarregar
     await new Promise(r=>setTimeout(r,2000));
     await refresh();
   }catch(e){
     const msg2=fe2(e);
     lg("Erro: "+msg2,"e");tt("Erro",msg2,"e");
-    // mesmo com erro RPC, a tx pode ter sido minerada — recarrega
     if(String(e.code)!=="4001"){
       lg("Recarregando mesmo assim...","p");
       await new Promise(r=>setTimeout(r,2000));
@@ -697,7 +699,6 @@ async function tx(msg,fn,ok,det){
   }
 }
 
-/* ════ ADMIN ════ */
 async function setGov(){
   if(!ST.iNo){tt("Sem permissao","So o owner do NFT.","e");return}
   await tx("setGovernance...",()=>CN.setGovernance(AD.gov),"NFT→Gov configurado.","Agora o Governance pode mintar NFTs.");
@@ -709,7 +710,6 @@ async function setSop(){
   await tx("setSystemOperator...",()=>CE.setSystemOperator(v),"systemOperator atualizado.",sh(v));
 }
 
-/* ════ MOTORISTA ════ */
 async function solicitarCadastro(){
   const m=document.getElementById("dm").value.trim();
   const p=document.getElementById("dp").value.trim();
@@ -736,7 +736,6 @@ async function revogarMot(a){
   await tx("Revogando...",()=>CG.revokeDriver(a),"Revogado.",sh(a));
 }
 
-/* ════ CORRIDAS ════ */
 async function criarCorrida(){
   try{
     const da=document.getElementById("dsel").value;
@@ -770,7 +769,6 @@ async function confirmarDestino(id){await tx("Confirmando destino #"+id,()=>CE.c
 async function concluirCorrida(id){await tx("Concluindo #"+id,()=>CE.confirmRideCompletion(id),"Concluida #"+id,"ID "+id)}
 async function timeout(id){await tx("Timeout #"+id,()=>CE.finalizeAfterTimeout(id),"Timeout #"+id,"ID "+id)}
 
-/* ════ TABS ════ */
 function tab(n){
   const ns=["pass","moto","adm"];
   document.querySelectorAll(".tab").forEach((t,i)=>t.classList.toggle("on",ns[i]===n));
@@ -780,3 +778,4 @@ function tab(n){
 </script>
 </body>
 </html>
+
