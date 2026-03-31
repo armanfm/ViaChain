@@ -1,6 +1,8 @@
-# 📝 Nota Técnica — Conexões Arquiteturais do ViaChain AMS (Automated Market Service)
+# 📝 Nota Técnica — Conexões Arquiteturais do ViaChain
 
-## 1. Similaridade com AMM (Automated Market Maker)
+> **AMS — Automated Market Service**: nomenclatura criada pelo ViaChain para descrever um mercado de serviços automatizado por smart contracts, onde o preço emerge do equilíbrio entre oferta e demanda — análogo ao AMM financeiro, aplicado ao transporte descentralizado.
+
+## 1. AMS (Automated Market Service) — Similaridade com AMM
 
 ### O modelo AMM clássico
 
@@ -41,7 +43,7 @@ ViaChain: passageiro propõe → motoristas aceitam ou não → preço emerge do
 - Poucos motoristas disponíveis → passageiro precisa oferecer mais
 - Muitos motoristas disponíveis → passageiro pode oferecer menos
 
-O preço não é definido por ninguém — emerge automaticamente do equilíbrio entre oferta de motoristas e demanda de passageiros. É um **AMM de transporte**.
+O preço não é definido por ninguém — emerge automaticamente do equilíbrio entre oferta de motoristas e demanda de passageiros. É um **AMS — Automated Market Service** — o primeiro modelo de mercado automatizado aplicado ao setor de transporte descentralizado.
 
 ---
 
@@ -97,10 +99,11 @@ O ViaChain não é apenas um app de transporte descentralizado. É um protocolo 
 
 1. **Intermediação de pagamentos** — eliminada pelo escrow on-chain
 2. **Verificação de identidade** — resolvida pelo DriverNFT (DID simplificado)
-3. **Precificação justa** — resolvida pelo leilão reverso (AMM de transporte)
+3. **Precificação justa** — resolvida pelo leilão reverso (AMS — Automated Market Service)
 
 Cada um desses problemas tem projetos dedicados no ecossistema Web3. O ViaChain os resolve de forma integrada dentro de um caso de uso real e cotidiano.
 
 ---
 
-*ViaChain MVP — Armando Freire
+*ViaChain MVP — Armando Freire 
+
