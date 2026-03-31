@@ -17,9 +17,25 @@ O `$VIA` é o token de utilidade do protocolo — o motor que alimenta todas as 
 | Propriedade | Detalhe |
 |---|---|
 | Padrão | ERC-20 (OpenZeppelin) |
+| Supply inicial | 20.000.000 $VIA (genesis) |
 | Função | Moeda de troca, recompensas e staking de governança |
 | Emissão | Controlada pelo contrato de Governança |
 | Paridade | Oráculo Chainlink mantém preço ETH/$VIA justo |
+
+**Distribuição do Supply Genesis:**
+
+| Destinação | % | Quantidade |
+|---|---|---|
+| Venda inicial (passageiros) | 40% | 8.000.000 $VIA |
+| Recompensas motoristas | 30% | 6.000.000 $VIA |
+| Reserva do protocolo | 20% | 4.000.000 $VIA |
+| Equipe / desenvolvimento | 10% | 2.000.000 $VIA |
+
+```solidity
+constructor() ERC20("ViaToken", "VIA") Ownable(msg.sender) {
+    _mint(msg.sender, 20_000_000 * 10**18);
+}
+```
 
 ---
 
@@ -123,4 +139,4 @@ Todas as transferências de tokens no Escrow seguirão o padrão `approve` + `tr
 
 *ViaChain é um protocolo financeiro completo focado em autonomia e incentivos programáveis.*
 
-*Armando José Freire de Melo | Turma 1 | 2026*
+*Armando Freire
