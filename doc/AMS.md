@@ -103,4 +103,4 @@ Cada um desses problemas tem projetos dedicados no ecossistema Web3. O ViaChain 
 
 ---
 
-*ViaChain MVP — Armando José Freire de Melo | Turma 1 | 2026*
+*ViaChain MVP — Armando Freire
