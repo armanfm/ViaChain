@@ -10,8 +10,8 @@
 - Credencial NFT (ERC-721) com categoria (básico / confort / luxo)
 - Escrow de pagamento em ETH com confirmação dupla
 - Timeout de 5 minutos para liberação automática
-- Cancelamento com reembolso antes do início
-- Cancelamento proporcional após início via systemOperator
+- Cancelamento com reembolso total antes do início
+- Cancelamento proporcional após início via systemOperator (contrato preparado)
 - Integração com oráculo Chainlink (ETH/BRL)
 - Frontend Web3 com ethers.js + MetaMask
 - Deploy na Sepolia testnet
@@ -23,7 +23,7 @@
 ### 1. Stake ativado no aceite da corrida
 
 **Situação atual:**
-O stake do motorista é um depósito de entrada no sistema, sem vínculo direto com cada corrida.
+O stake do motorista é um depósito de entrada no sistema, sem vínculo direto com cada corrida. O motorista já paga gas ao aceitar — o que funciona como desincentivo básico ao abandono no MVP.
 
 **Melhoria:**
 Bloquear automaticamente parte do stake no momento do `acceptRide` — quando o motorista assume o compromisso real de buscar o passageiro.
@@ -44,11 +44,10 @@ function acceptRide(uint256 rideId) external payable {
 ### 2. Privacidade do destino do passageiro
 
 **Situação atual:**
-Origem e destino ficam no `localStorage` do frontend — qualquer pessoa com acesso ao app consegue ver destinos de outros passageiros.
+Origem e destino ficam no `localStorage` do frontend. Todos os motoristas veem as corridas disponíveis com destino para poder aceitar — isso é correto. O problema é que um passageiro poderia ver o destino de outro passageiro.
 
 **Melhoria:**
-- Todos os motoristas veem as corridas disponíveis com destino para poder aceitar
-- O motorista que aceitar vê origem e destino — precisa saber para onde ir
+- Motoristas veem corridas disponíveis com destino via API autenticada
 - Passageiro A nunca vê o destino do Passageiro B
 - Blockchain recebe apenas `valor + hash` — destino não fica exposto publicamente
 
@@ -133,6 +132,41 @@ Integrar oráculo de rota descentralizado para validar que a distância declarad
 
 ---
 
+### 9. Cancelamento proporcional com GPS em tempo real
+
+**Situação atual:**
+O cancelamento após início da corrida devolve o valor integral ao passageiro. O contrato já possui a função `cancelAfterStartWithRecalculation` preparada para receber o valor proporcional calculado externamente, mas sem integração GPS o comportamento padrão é reembolso total.
+
+**Melhoria:**
+Integrar Google Maps API para rastrear a posição do motorista em tempo real. Com GPS ativo, o sistema evolui em duas frentes:
+
+**Confirmações automáticas:**
+```
+GPS detecta motorista no local do passageiro → startRide automático
+GPS detecta motorista no destino → confirmDestination automático
+```
+Elimina a necessidade de confirmação manual do motorista — mais seguro e sem possibilidade de fraude.
+
+**Cancelamento simétrico e proporcional:**
+```
+Passageiro cancela no meio → sistema avisa motorista
+                           → calcula distância percorrida
+                           → motorista recebe proporcional
+                           → passageiro recebe restante
+
+Motorista cancela no meio → sistema avisa passageiro
+                          → calcula distância percorrida
+                          → motorista recebe proporcional
+                          → passageiro recebe restante
+```
+
+Ambos os lados têm o mesmo direito ao cancelamento proporcional — com notificação automática para a parte afetada.
+
+**Por que não foi implementado no MVP:**
+A Google Maps API é paga em produção e requer movimento físico real para testes. O contrato já está preparado via `cancelAfterStartWithRecalculation` — falta apenas a camada off-chain de GPS.
+
+---
+
 ## 📊 Priorização
 
 | Melhoria | Impacto | Complexidade | Prioridade |
@@ -140,6 +174,7 @@ Integrar oráculo de rota descentralizado para validar que a distância declarad
 | Stake no aceite | Alto | Baixa | Alta |
 | Privacidade do destino | Alto | Média | Alta |
 | Otimização de gas (loops) | Alto | Baixa | Alta |
+| Cancelamento proporcional GPS | Alto | Média | Alta |
 | Confirmação de presença | Médio | Média | Média |
 | Disponibilidade em tempo real | Médio | Média | Média |
 | Governança DAO | Alto | Alta | Futura |
@@ -155,7 +190,7 @@ Frontend Web3
 HTML + ethers.js + MetaMask
         |
 Backend Privado
-Destinos · Disponibilidade · GPS
+Destinos · Disponibilidade · GPS em tempo real
         |
 Blockchain (Sepolia)
 DriverNFT · Governance · Escrow
@@ -164,5 +199,6 @@ Stake por corrida · DAO · Token
 
 ---
 
-*ViaChain MVP — Armando Freire 
+*ViaChain MVP — Armando José Freire de Melo | Turma 1 | 2026*
+
 
