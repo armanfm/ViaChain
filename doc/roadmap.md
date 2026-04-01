@@ -199,6 +199,6 @@ Stake por corrida · DAO · Token
 
 ---
 
-*ViaChain MVP — Armando José Freire de Melo | Turma 1 | 2026*
+*ViaChain MVP — Armando Freire 2026*
 
 
