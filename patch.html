@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
@@ -131,6 +132,7 @@
         <div class="fg"><label>DriverNFT</label><input id="anft" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>ViaChainGovernance</label><input id="agov" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>RideEscrow</label><input id="aesc" spellcheck="false" placeholder="0x..."/></div>
+        <div class="fg"><label>Cancelamento.sol</label><input id="acancel" spellcheck="false" placeholder="0x..."/></div>
       </div>
       <div id="errbox"></div>
       <button class="btn bp" onclick="ligarContratos()">Entrar no app</button>
@@ -324,6 +326,13 @@ const AESC=[
 ];
 
 /* ── ORACLE ── */
+// ABI do Cancelamento.sol
+const ACANCEL=[
+  "function cancelAfterStart(uint256,bytes) external",
+  "function setSystemOperator(address) external",
+  "function owner() view returns (address)"
+];
+
 const AORACLE=["function getETHPrice() view returns (int256)"];
 const ORACLE_ADDR="0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07";
 let CO=null;
@@ -341,7 +350,7 @@ const RC={1:"cbl",2:"cye",3:"cpu",4:"cpu",5:"cgr",6:"cre",7:"cre"};
 
 /* ── STATE ── */
 let P=null,SG=null,me="";
-let CN=null,CG=null,CE=null;
+let CN=null,CG=null,CE=null,CC=null; // CC = Cancelamento.sol
 let AD={nft:"",gov:"",esc:""};
 let ST={drivers:[],rides:[],myP:null,
   no:"",go:"",eo:"",ng:"",gn:"",eg:"",sop:"",
@@ -432,7 +441,7 @@ async function calcularOSRM(){
     const km=(osrm.routes[0].distance/1000).toFixed(2);
 
     // Salva coordenadas para usar no createRide()
-    osrmData={lat1,lon1,lon2,lat2,km:Number(km)};
+    osrmData={lat1,lon1,lat2,lon2,km:Number(km)};
 
     // Preenche campos readonly
     document.getElementById("rlat1").value=lat1;
@@ -478,6 +487,7 @@ async function conectar(){
     document.getElementById("anft").value=saved.nft||"";
     document.getElementById("agov").value=saved.gov||"";
     document.getElementById("aesc").value=saved.esc||"";
+    document.getElementById("acancel").value=saved.cancel||"";
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
   }catch(e){
@@ -503,11 +513,20 @@ async function ligarContratos(){
     if(c2==="0x") throw new Error("Governance: sem contrato nesse endereco.");
     if(c3==="0x") throw new Error("RideEscrow: sem contrato nesse endereco.");
     AD={nft:ethers.getAddress(nft),gov:ethers.getAddress(gov),esc:ethers.getAddress(esc)};
-    ss(AD);
+    ss(AD); // salva nft, gov, esc, cancel
     CN=new ethers.Contract(AD.nft,ANFT,SG);
     CG=new ethers.Contract(AD.gov,AGOV,SG);
     CE=new ethers.Contract(AD.esc,AESC,SG);
     CO=new ethers.Contract(ORACLE_ADDR,AORACLE,P);
+    // Inicializa Cancelamento.sol se endereco foi fornecido
+    const cancelAddr=document.getElementById("acancel").value.trim();
+    if(cancelAddr&&ethers.isAddress(cancelAddr)){
+      CC=new ethers.Contract(ethers.getAddress(cancelAddr),ACANCEL,SG);
+      AD.cancel=ethers.getAddress(cancelAddr);
+      lg("Cancelamento.sol conectado","s");
+    } else {
+      lg("Cancelamento.sol nao configurado — cancelamento apos inicio indisponivel","p");
+    }
     await carregarPrecoETH();
     lg("Contratos OK!","s");
     tt("Contratos conectados","DriverNFT + Governance + Escrow + Oracle","s");
@@ -732,33 +751,22 @@ function rc(r,btns){
 function renderMinhasCorridas(){
   const el=document.getElementById("minhas");
   const mine=ST.rides.filter(r=>r.pass.toLowerCase()===me.toLowerCase());
-  if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣️</div>Nenhuma corrida.</div>`;return}
-  let html = "";
-  for(const r of mine){
-    let b = "";
-    // Cancelamento permitido apenas nos status iniciais (Criada ou Aceita)
-    if(r.st===1 || r.st===2){
-      b += `<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
+  if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣‍</div>Nenhuma corrida.</div>`;return}
+  el.innerHTML=mine.map(r=>{
+    let b="";
+    // Antes do inicio — devolve tudo ao passageiro
+    if(r.st===1||r.st===2)b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
+    if(r.st===2)b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
+    // Apos inicio — GPS captura posicao atual, OSRM calcula proporcional
+    if(r.st===3){
+      const ld2=encodeURIComponent(r.latDe||"");
+      const nd2=encodeURIComponent(r.lonDe||"");
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld2}'),decodeURIComponent('${nd2}'))">Cancelar corrida</button>`;
     }
-    if(r.st===2){
-      b += `<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
-    }
-    // ✅ CORREÇÃO: Botão de conclusão apenas quando status === 5 (Concluída pelo oracle)
-    if(r.st===5){
-      b += `<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
-    }
-    // Se status for 4, mostra mensagem educativa e agenda auto-refresh
-    if(r.st===4){
-      b += `<div class="notice" style="margin-top:8px;">⏳ Aguardando cálculo da rota pelo oracle Chainlink... Atualize em alguns segundos.</div>`;
-      // Auto-refresh após 5 segundos (opcional, mas melhora UX)
-      setTimeout(() => refresh(), 5000);
-    }
-    if(r.st===4 || r.st===5){
-      b += `<button class="btn bo bsm bfull" onclick="timeout(${r.id})">Timeout (finalizar)</button>`;
-    }
-    html += rc(r, b);
-  }
-  el.innerHTML = html;
+    if(r.st===4)b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
+    if(r.st===4)b+=`<button class="btn bo bsm bfull" onclick="timeout(${r.id})">Timeout</button>`;
+    return rc(r,b);
+  }).join("");
 }
 
 function renderMotoristas(){
@@ -786,7 +794,18 @@ function renderMotAtivos(){
   const el=document.getElementById("mativo");
   const list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&[2,3,4].includes(r.st));
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">🚦</div>Nenhuma.</div>`;return}
-  el.innerHTML=list.map(r=>rc(r,r.st===3?`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`:"")).join("");
+  el.innerHTML=list.map(r=>{
+    let b="";
+    // Motorista confirma chegada ao destino
+    if(r.st===3){
+      b+=`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`;
+      // Motorista cancela apos inicio — OSRM calcula proporcional ao percorrido
+      const ld=encodeURIComponent(r.latDe||"");
+      const nd=encodeURIComponent(r.lonDe||"");
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld}'),decodeURIComponent('${nd}'))">Cancelar corrida</button>`;
+    }
+    return rc(r,b);
+  }).join("");
 }
 
 function renderAdmPendentes(){
@@ -945,6 +964,50 @@ async function criarCorrida(){
 async function aceitarCorrida(id){await tx("Aceitando #"+id,()=>CE.acceptRide(id),"Aceita #"+id,"ID "+id)}
 async function rejeitarCorrida(id){await tx("Rejeitando #"+id,()=>CE.rejectRide(id),"Rejeitada #"+id,"ID "+id)}
 async function cancelarCorrida(id){await tx("Cancelando #"+id,()=>CE.cancelBeforeStart(id),"Cancelada #"+id,"ID "+id)}
+
+// Cancelamento apos inicio — GPS captura posicao atual do motorista
+// OSRM calcula distancia percorrida — Pull Payment distribui proporcional
+// Funciona para passageiro E motorista — qualquer lado pode cancelar
+async function cancelarAposInicio(rideId, latDe, lonDe){
+  try{
+    lg("Capturando GPS atual...","p");
+    tt("Aguardando GPS","Permita o acesso a localizacao.","p");
+
+    // Captura posicao GPS atual do dispositivo
+    const pos = await new Promise((res,rej)=>
+      navigator.geolocation.getCurrentPosition(res, rej, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      })
+    );
+
+    const lat1 = pos.coords.latitude.toFixed(6);
+    const lon1 = pos.coords.longitude.toFixed(6);
+
+    lg("GPS: "+lat1+","+lon1+" — codificando...","p");
+
+    // Empacota as 4 coordenadas para o Cancelamento.sol
+    // lat1/lon1 = posicao atual do motorista (GPS)
+    // lat2/lon2 = destino original gravado on-chain
+    const coords = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string","string","string","string"],
+      [lat1, lon1, String(latDe), String(lonDe)]
+    );
+
+    await tx(
+      "Cancelando com calculo proporcional...",
+      ()=>CC.cancelAfterStart(rideId, coords),
+      "Cancelamento solicitado!",
+      "Chainlink OSRM calculando valor proporcional ao percorrido..."
+    );
+  }catch(e){
+    if(e.code===1) tt("GPS negado","Permita o acesso a localizacao nas configuracoes do navegador.","e");
+    else if(e.code===3) tt("GPS timeout","Nao foi possivel obter localizacao. Tente novamente.","e");
+    else tt("Erro cancelamento",fe2(e),"e");
+    lg("Erro GPS/cancelamento: "+fe2(e),"e");
+  }
+}
 async function iniciarCorrida(id){await tx("Iniciando #"+id,()=>CE.startRide(id),"Iniciada #"+id,"ID "+id)}
 async function confirmarDestino(id){
   // confirmDestinationReached agora aciona Rota.sol → Chainlink OSRM automaticamente
