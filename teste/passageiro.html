@@ -3,11 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>ViaChain · Passageiro - Transporte Descentralizado</title>
-  <!-- Leaflet (mapa) -->
+  <title>ViaChain · Passageiro</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Ethers v6 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,7 +26,7 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-family: 'Inter', system-ui, sans-serif;
       padding: 1rem 1.5rem 3rem;
     }
     .container { max-width: 1280px; margin: 0 auto; }
@@ -169,9 +167,6 @@
     .status-chip { background: var(--surface); border-radius: 12px; padding: 8px 12px; display: flex; justify-content: space-between; }
     .ok { color: var(--green); }
     .bad { color: var(--red); }
-    .loading { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .saque-box { background: rgba(34,197,94,.07); border: 1px solid var(--green); border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
     .saque-val { color: var(--green); font-weight: 700; font-size: 1rem; }
     @media (max-width: 700px) { body { padding: 1rem; } .form-grid { grid-template-columns: 1fr; } }
@@ -183,58 +178,41 @@
     <div class="logo">🚗 ViaChain · Passageiro</div>
     <div class="wallet">
       <span>🦊</span>
-      <span id="walletAddress">Não conectado</span>
+      <span id="walletAddress">Conecte a MetaMask</span>
       <span class="badge" id="walletBal">—</span>
     </div>
   </div>
 
-  <!-- Status dos contratos -->
-  <div class="card">
-    <div class="card-title">🔗 Status dos contratos</div>
-    <div id="contractStatusGrid" class="contract-status-grid"></div>
-    <div id="contractNotes" style="font-size:0.75rem; color:var(--muted); margin-top: 8px;"></div>
-  </div>
-
-  <!-- Estatísticas -->
-  <div class="grid-stats" id="statsArea">
+  <div class="grid-stats">
     <div class="stat-card"><div class="stat-number" id="activeRides">0</div><div class="stat-label">Corridas ativas</div></div>
     <div class="stat-card"><div class="stat-number" id="approvedDrivers">0</div><div class="stat-label">Motoristas aprovados</div></div>
-    <div class="stat-card"><div class="stat-number" id="ethBalance">0.000</div><div class="stat-label">Saldo ETH (carteira)</div></div>
-    <div class="stat-card"><div class="stat-number" id="ethPriceBrl">R$ —</div><div class="stat-label">ETH / BRL (Chainlink)</div></div>
+    <div class="stat-card"><div class="stat-number" id="ethBalance">0.000</div><div class="stat-label">Saldo ETH</div></div>
+    <div class="stat-card"><div class="stat-number" id="ethPriceBrl">R$ —</div><div class="stat-label">ETH / BRL</div></div>
   </div>
 
-  <!-- Saque -->
   <div id="withdrawSection" style="display: none;" class="card">
     <div class="card-title">💰 Saldo disponível para saque</div>
     <div class="saque-box">
-      <div>
-        <div class="sl">Saldo pendente</div>
-        <div class="saque-val" id="pendingWithdrawVal">0 ETH</div>
-      </div>
+      <div><div class="sl">Saldo pendente</div><div class="saque-val" id="pendingWithdrawVal">0 ETH</div></div>
       <button class="btn btn-success btn-sm" id="withdrawBtn">💸 Sacar ETH</button>
     </div>
   </div>
 
-  <!-- Mapa -->
   <div class="card">
     <div class="card-title">🗺️ Visualizar rota</div>
     <div class="map-wrap"><div id="map"></div></div>
   </div>
 
-  <!-- Criar corrida -->
   <div class="card">
     <div class="card-title">➕ Criar corrida</div>
-    <div class="card-sub">
-      Selecione o motorista e preencha a rota. As coordenadas são calculadas automaticamente
-      via OSRM (OpenStreetMap) — gratuito e sem API key.
-    </div>
+    <div class="card-sub">Selecione o motorista e preencha a rota. Coordenadas calculadas via OSRM (gratuito).</div>
     <div class="form-grid">
-      <div class="input-field"><label>📍 Origem (endereço)</label><input type="text" id="originAddr" placeholder="Ex: Av. Boa Viagem, Recife" /></div>
-      <div class="input-field"><label>📍 Destino (endereço)</label><input type="text" id="destAddr" placeholder="Ex: Shopping Recife" /></div>
+      <div class="input-field"><label>📍 Origem</label><input type="text" id="originAddr" placeholder="Ex: Av. Paulista, 1000, São Paulo" /></div>
+      <div class="input-field"><label>📍 Destino</label><input type="text" id="destAddr" placeholder="Ex: Shopping Morumbi" /></div>
     </div>
     <div class="flex-row">
-      <button class="btn btn-outline" id="calcRouteBtn">🗺️ Recalcular rota (OSRM)</button>
-      <button class="btn btn-outline btn-sm" id="refreshBtn">↻ Atualizar dados</button>
+      <button class="btn btn-outline" id="calcRouteBtn">🗺️ Recalcular rota</button>
+      <button class="btn btn-outline btn-sm" id="refreshBtn">↻ Atualizar</button>
     </div>
     <div id="routeStatus" style="font-size: 0.8rem; margin-top: 8px; color: var(--yellow);"></div>
     
@@ -243,7 +221,7 @@
 
     <div id="quoteBox" class="quote-panel" style="display: none;">
       <div class="quote-item"><div class="quote-label">Preço/km</div><div class="quote-value" id="pricePerKm">—</div></div>
-      <div class="quote-item"><div class="quote-label">Distância OSRM</div><div class="quote-value" id="distanceKm">—</div></div>
+      <div class="quote-item"><div class="quote-label">Distância</div><div class="quote-value" id="distanceKm">—</div></div>
       <div class="quote-item"><div class="quote-label">Total ETH</div><div class="quote-value" id="totalEth">—</div></div>
       <div class="quote-item"><div class="quote-label">Total BRL</div><div class="quote-value" id="totalBrl">—</div></div>
       <div class="quote-item"><div class="quote-label">Categoria</div><div class="quote-value" id="driverCat">—</div></div>
@@ -253,7 +231,6 @@
     </div>
   </div>
 
-  <!-- Minhas corridas -->
   <div class="card">
     <div class="card-title">📋 Minhas corridas</div>
     <div id="myRidesList" class="ride-history"></div>
@@ -263,8 +240,18 @@
 
 <script>
   (function(){
-    // ------------------- CONFIGURAÇÃO DOS CONTRATOS ------------------
-    const ORACLE_ADDR = "0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07"; // ETH/USD Sepolia
+    // ============================================================
+    // 🔧 COLOQUE AQUI OS ENDEREÇOS DOS SEUS CONTRATOS (hardcoded)
+    // ============================================================
+    const CONTRATOS = {
+      DRIVER_NFT: "0xSEU_DRIVER_NFT_AQUI",      // Endereço do DriverNFT
+      GOVERNANCE: "0xSEU_GOVERNANCE_AQUI",      // Endereço do ViaChainGovernance
+      RIDE_ESCROW: "0xSEU_RIDE_ESCROW_AQUI",    // Endereço do RideEscrow
+      CANCELAMENTO: "0xSEU_CANCELAMENTO_AQUI"   // Endereço do Cancelamento.sol (opcional, pode deixar "0x000...")
+    };
+    // ============================================================
+
+    const ORACLE_ADDR = "0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07";
     const AORACLE = ["function getETHPrice() view returns (int256)"];
     const A_DRIVER_NFT = ["function owner() view returns (address)","function governance() view returns (address)","function hasActiveNFT(address) view returns (bool)"];
     const A_GOV = [
@@ -273,8 +260,8 @@
       "function getDriverProfile(address) view returns (address,string,string,string,uint256,uint8,uint8,uint256)"
     ];
     const A_ESCROW = [
-      "function owner() view returns (address)","function governance() view returns (address)","function systemOperator() view returns (address)",
-      "function cancelamento() view returns (address)","function rota() view returns (address)","function rideCounter() view returns (uint256)",
+      "function owner() view returns (address)","function governance() view returns (address)",
+      "function cancelamento() view returns (address)","function rideCounter() view returns (uint256)",
       "function createRide(address,string,string,string,string) payable returns (uint256)",
       "function cancelBeforeStart(uint256) external","function startRide(uint256) external",
       "function confirmDestinationReached(uint256) external","function confirmRideCompletion(uint256) external",
@@ -283,10 +270,9 @@
     ];
     const A_CANCEL = ["function cancelAfterStart(uint256,bytes) external"];
     const BRL_RATE = 5.85;
-    
+
     let provider, signer, userAddress = "";
     let contractNFT, contractGov, contractEscrow, contractCancel, chainlinkOracle;
-    let contractsAddr = { nft: "", gov: "", escrow: "", cancel: "" };
     let ethPriceUSD = 0;
     let driversList = [];
     let userRides = [];
@@ -294,14 +280,12 @@
     let currentRoute = { km: 0, lat1: "", lon1: "", lat2: "", lon2: "" };
     let map, routeLayer, markerStart, markerEnd;
 
-    // Toasts
-    const toastRoot = document.getElementById("toastRoot");
     function toast(msg, type="info"){ 
       const div = document.createElement("div");
       div.className = "toast";
       div.style.borderLeftColor = type==="success"?"#10b981": type==="error"?"#ef4444":"#3b82f6";
       div.innerHTML = `<span>${msg}</span>`;
-      toastRoot.appendChild(div);
+      document.getElementById("toastRoot").appendChild(div);
       setTimeout(()=>div.remove(), 4500);
     }
 
@@ -320,24 +304,16 @@
         const bal = await provider.getBalance(userAddress);
         document.getElementById("walletBal").innerText = Number(ethers.formatEther(bal)).toFixed(4)+" ETH";
         document.getElementById("ethBalance").innerText = Number(ethers.formatEther(bal)).toFixed(4);
-        toast(`Conectado: ${userAddress.slice(0,8)}...`, "success");
         
-        // Solicitar endereços dos contratos
-        const nft = prompt("Endereço DriverNFT:", localStorage.getItem("vc_nft") || "");
-        const gov = prompt("Endereço Governance:", localStorage.getItem("vc_gov") || "");
-        const esc = prompt("Endereço RideEscrow:", localStorage.getItem("vc_esc") || "");
-        const cancel = prompt("Endereço Cancelamento.sol (opcional):", localStorage.getItem("vc_cancel") || "");
-        if(!nft || !gov || !esc) throw new Error("Endereços obrigatórios");
-        if(!ethers.isAddress(nft)||!ethers.isAddress(gov)||!ethers.isAddress(esc)) throw new Error("Endereço inválido");
-        contractsAddr = { nft, gov, escrow: esc, cancel: cancel || "" };
-        localStorage.setItem("vc_nft", nft); localStorage.setItem("vc_gov", gov); localStorage.setItem("vc_esc", esc);
-        if(cancel) localStorage.setItem("vc_cancel", cancel);
-        
-        contractNFT = new ethers.Contract(nft, A_DRIVER_NFT, signer);
-        contractGov = new ethers.Contract(gov, A_GOV, signer);
-        contractEscrow = new ethers.Contract(esc, A_ESCROW, signer);
-        if(cancel && ethers.isAddress(cancel)) contractCancel = new ethers.Contract(cancel, A_CANCEL, signer);
+        contractNFT = new ethers.Contract(CONTRATOS.DRIVER_NFT, A_DRIVER_NFT, signer);
+        contractGov = new ethers.Contract(CONTRATOS.GOVERNANCE, A_GOV, signer);
+        contractEscrow = new ethers.Contract(CONTRATOS.RIDE_ESCROW, A_ESCROW, signer);
+        if(CONTRATOS.CANCELAMENTO && CONTRATOS.CANCELAMENTO !== "0x0000000000000000000000000000000000000000") {
+          contractCancel = new ethers.Contract(CONTRATOS.CANCELAMENTO, A_CANCEL, signer);
+        }
         chainlinkOracle = new ethers.Contract(ORACLE_ADDR, AORACLE, provider);
+        
+        toast(`Conectado: ${userAddress.slice(0,8)}...`, "success");
         return true;
       }catch(e){ toast("Erro: "+e.message, "error"); return false; }
     }
@@ -346,8 +322,7 @@
       try{
         const price = await chainlinkOracle.getETHPrice();
         ethPriceUSD = Number(price) / 1e8;
-        const brl = (ethPriceUSD * BRL_RATE).toFixed(2);
-        document.getElementById("ethPriceBrl").innerHTML = `R$ ${brl}`;
+        document.getElementById("ethPriceBrl").innerHTML = `R$ ${(ethPriceUSD * BRL_RATE).toFixed(2)}`;
       }catch(e){ ethPriceUSD=0; document.getElementById("ethPriceBrl").innerHTML = "Indisponível"; }
     }
 
@@ -408,7 +383,7 @@
       const origin = document.getElementById("originAddr").value.trim();
       const dest = document.getElementById("destAddr").value.trim();
       if(!origin || !dest){ toast("Preencha origem e destino","error"); return; }
-      document.getElementById("routeStatus").innerHTML = "⏳ Geocodificando e calculando rota...";
+      document.getElementById("routeStatus").innerHTML = "⏳ Calculando rota...";
       try{
         const [geoOrig, geoDest] = await Promise.all([
           fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(origin)}&format=json&limit=1`).then(r=>r.json()),
@@ -424,7 +399,7 @@
         if(osrmJson.code !== "Ok") throw new Error("OSRM não encontrou rota");
         const km = osrmJson.routes[0].distance / 1000;
         currentRoute = { km, lat1, lon1, lat2, lon2 };
-        document.getElementById("routeStatus").innerHTML = `✅ Rota calculada: ${km.toFixed(2)} km`;
+        document.getElementById("routeStatus").innerHTML = `✅ Rota: ${km.toFixed(2)} km`;
         document.getElementById("distanceKm").innerText = km.toFixed(2)+" km";
         if(routeLayer) map.removeLayer(routeLayer);
         routeLayer = L.geoJSON(osrmJson.routes[0].geometry, { style: { color: "#3b82f6", weight: 4 } }).addTo(map);
@@ -452,12 +427,10 @@
       const totalWei = BigInt(driver.priceWei) * BigInt(Math.round(currentRoute.km * 1000)) / 1000n;
       const totalEth = Number(ethers.formatEther(totalWei));
       document.getElementById("pricePerKm").innerText = driver.priceEth.toFixed(6)+" ETH";
-      document.getElementById("distanceKm").innerText = currentRoute.km.toFixed(2)+" km";
       document.getElementById("totalEth").innerText = totalEth.toFixed(6)+" ETH";
       if(ethPriceUSD > 0){
-        const brlTotal = (totalEth * ethPriceUSD * BRL_RATE).toFixed(2);
-        document.getElementById("totalBrl").innerHTML = `R$ ${brlTotal}`;
-      } else { document.getElementById("totalBrl").innerHTML = "—"; }
+        document.getElementById("totalBrl").innerHTML = `R$ ${(totalEth * ethPriceUSD * BRL_RATE).toFixed(2)}`;
+      }
       document.getElementById("driverCat").innerHTML = driver.cat;
       document.getElementById("quoteBox").style.display = "grid";
       document.getElementById("createRideBtn").disabled = false;
@@ -469,7 +442,7 @@
       if(!driver) return;
       const totalWei = BigInt(driver.priceWei) * BigInt(Math.round(currentRoute.km * 1000)) / 1000n;
       try{
-        toast("Criando corrida... Aguarde confirmação","info");
+        toast("Criando corrida...","info");
         const tx = await contractEscrow.createRide(
           selectedDriverAddr,
           currentRoute.lat1, currentRoute.lon1, currentRoute.lat2, currentRoute.lon2,
@@ -502,21 +475,20 @@
         }
         userRides = rides.sort((a,b)=>b.id - a.id);
         renderMyRides();
-        const active = userRides.filter(r=>[1,2,3,4].includes(r.status)).length;
-        document.getElementById("activeRides").innerText = active;
+        document.getElementById("activeRides").innerText = userRides.filter(r=>[1,2,3,4].includes(r.status)).length;
       }catch(e){ console.warn(e); }
     }
 
     function renderMyRides(){
       const container = document.getElementById("myRidesList");
-      if(!userRides.length){ container.innerHTML = `<div style="text-align:center;color:var(--muted);">Nenhuma corrida encontrada.</div>`; return; }
+      if(!userRides.length){ container.innerHTML = `<div style="text-align:center;color:var(--muted);">Nenhuma corrida.</div>`; return; }
       const statusMap = {1:"Criada",2:"Aceita",3:"Iniciada",4:"Dest. Confirmado",5:"Concluída",6:"Cancelada",7:"Rejeitada"};
       container.innerHTML = userRides.map(ride => {
         let actions = "";
         if(ride.status === 1 || ride.status === 2) actions += `<button class="btn btn-danger btn-sm" onclick="window.cancelBeforeStart(${ride.id})">Cancelar</button>`;
         if(ride.status === 2) actions += `<button class="btn btn-primary btn-sm" onclick="window.startRide(${ride.id})">Iniciar</button>`;
         if(ride.status === 3) actions += `<button class="btn btn-danger btn-sm" onclick="window.cancelAfterStartGPS(${ride.id},'${ride.latDest}','${ride.lonDest}')">Cancelar (GPS)</button>`;
-        if(ride.status === 4) actions += `<button class="btn btn-success btn-sm" onclick="window.confirmCompletion(${ride.id})">Finalizar corrida</button>`;
+        if(ride.status === 4) actions += `<button class="btn btn-success btn-sm" onclick="window.confirmCompletion(${ride.id})">Finalizar</button>`;
         const totalEth = Number(ethers.formatEther(ride.priceWei)).toFixed(5);
         return `<div class="ride-item">
           <div class="ride-header"><strong>#${ride.id}</strong><span class="status-badge status-${ride.status}">${statusMap[ride.status]}</span></div>
@@ -527,22 +499,22 @@
       }).join("");
     }
 
-    async function cancelBeforeStart(id){ await execTx(()=>contractEscrow.cancelBeforeStart(id), "Corrida cancelada, reembolso processado."); }
-    async function startRide(id){ await execTx(()=>contractEscrow.startRide(id), "Corrida iniciada!"); }
-    async function confirmCompletion(id){ await execTx(()=>contractEscrow.confirmRideCompletion(id), "Corrida concluída! Pagamento liberado."); }
+    async function cancelBeforeStart(id){ await execTx(()=>contractEscrow.cancelBeforeStart(id), "Cancelada!"); }
+    async function startRide(id){ await execTx(()=>contractEscrow.startRide(id), "Iniciada!"); }
+    async function confirmCompletion(id){ await execTx(()=>contractEscrow.confirmRideCompletion(id), "Concluída!"); }
     async function cancelAfterStartGPS(rideId, latDest, lonDest){
-      if(!navigator.geolocation){ toast("Geolocalização não suportada","error"); return; }
+      if(!navigator.geolocation){ toast("GPS não suportado","error"); return; }
       navigator.geolocation.getCurrentPosition(async (pos)=>{
         const latCur = pos.coords.latitude.toFixed(6);
         const lonCur = pos.coords.longitude.toFixed(6);
         const encoded = ethers.AbiCoder.defaultAbiCoder().encode(["string","string","string","string"],[latCur, lonCur, latDest, lonDest]);
         if(!contractCancel){ toast("Cancelamento.sol não configurado","error"); return; }
-        await execTx(()=>contractCancel.cancelAfterStart(rideId, encoded), "Cancelamento proporcional solicitado.");
-      }, (err)=>{ toast("Permissão de GPS necessária para cancelamento","error"); });
+        await execTx(()=>contractCancel.cancelAfterStart(rideId, encoded), "Cancelamento solicitado");
+      }, (err)=>{ toast("Permissão de GPS necessária","error"); });
     }
     async function execTx(callback, successMsg){
       try{
-        toast("Enviando transação...","info");
+        toast("Enviando...","info");
         const tx = await callback();
         await tx.wait();
         toast(successMsg, "success");
@@ -562,43 +534,17 @@
     }
     async function withdrawFunds(){ await execTx(()=>contractEscrow.withdraw(), "Saque realizado!"); }
 
-    async function loadContractStatus(){
-      if(!contractNFT || !contractGov || !contractEscrow) return;
-      const nftGov = await contractNFT.governance();
-      const govNFT = await contractGov.driverNFT();
-      const escGov = await contractEscrow.governance();
-      const ok1 = nftGov.toLowerCase() === contractsAddr.gov.toLowerCase();
-      const ok2 = govNFT.toLowerCase() === contractsAddr.nft.toLowerCase();
-      const ok3 = escGov.toLowerCase() === contractsAddr.gov.toLowerCase();
-      const cancelAddr = await contractEscrow.cancelamento();
-      const hasCancel = cancelAddr !== ethers.ZeroAddress;
-      document.getElementById("contractStatusGrid").innerHTML = `
-        <div class="status-chip"><span>DriverNFT</span><span>${contractsAddr.nft.slice(0,8)}...</span></div>
-        <div class="status-chip"><span>Governance</span><span>${contractsAddr.gov.slice(0,8)}...</span></div>
-        <div class="status-chip"><span>RideEscrow</span><span>${contractsAddr.escrow.slice(0,8)}...</span></div>
-        <div class="status-chip"><span>NFT ➜ Gov</span><span class="${ok1?'ok':'bad'}">${ok1?'✅ OK':'❌'}</span></div>
-        <div class="status-chip"><span>Gov ➜ NFT</span><span class="${ok2?'ok':'bad'}">${ok2?'✅ OK':'❌'}</span></div>
-        <div class="status-chip"><span>Escrow ➜ Gov</span><span class="${ok3?'ok':'bad'}">${ok3?'✅ OK':'❌'}</span></div>
-        <div class="status-chip"><span>Cancelamento.sol</span><span>${hasCancel ? '✅ configurado' : '❌ não configurado'}</span></div>
-        <div class="status-chip"><span>Oracle Chainlink</span><span>${ethPriceUSD>0 ? `ETH R$ ${(ethPriceUSD*BRL_RATE).toFixed(2)}` : 'Carregando...'}</span></div>
-        <div class="status-chip"><span>OSRM (OpenStreetMap)</span><span class="ok">✅ Gratuito — sem API key</span></div>
-      `;
-      document.getElementById("contractNotes").innerHTML = ok1 && ok2 && ok3 ? "✅ Todos os contratos alinhados." : "⚠️ Algumas permissões entre contratos estão faltando.";
-    }
-
     async function refreshAll(){
       if(!provider || !userAddress) return;
       await loadEthPrice();
       await fetchApprovedDrivers();
       await loadUserRides();
       await loadPendingWithdraw();
-      await loadContractStatus();
       const bal = await provider.getBalance(userAddress);
       document.getElementById("ethBalance").innerText = Number(ethers.formatEther(bal)).toFixed(4);
       document.getElementById("walletBal").innerText = Number(ethers.formatEther(bal)).toFixed(4)+" ETH";
     }
 
-    // Inicialização
     window.onload = async () => {
       initMap();
       const ok = await connectWallet();
