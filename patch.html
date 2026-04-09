@@ -135,6 +135,7 @@
         <div class="fg"><label>Cancelamento.sol</label><input id="acancel" spellcheck="false" placeholder="0x..."/></div>
         <!-- ✅ NOVO: campo Rota.sol -->
         <div class="fg"><label>Rota.sol</label><input id="arota" spellcheck="false" placeholder="0x..."/></div>
+        <div class="fg"><label>Chainlink Subscription ID</label><input id="asubid" type="number" placeholder="Ex: 1234"/></div>
       </div>
       <div id="errbox"></div>
       <button class="btn bp" onclick="ligarContratos()">Entrar no app</button>
@@ -480,6 +481,7 @@ async function conectar(){
     document.getElementById("aesc").value=saved.esc||"";
     document.getElementById("acancel").value=saved.cancel||"";
     document.getElementById("arota").value=saved.rota||""; // ✅ restaura Rota.sol salvo
+    document.getElementById("asubid").value=saved.subid||""; // ✅ restaura Subscription ID salvo
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
   }catch(e){
@@ -520,11 +522,19 @@ async function ligarContratos(){
       lg("Cancelamento.sol nao configurado","p");
     }
 
-    // ── ✅ Rota.sol — conecta e chama setRota() se necessario ──
+    // ── ✅ Rota.sol — conecta e chama setRota() e setSubscriptionId() se necessario ──
     const rotaAddr=document.getElementById("arota").value.trim();
+    const subId=document.getElementById("asubid").value.trim();
     if(rotaAddr&&ethers.isAddress(rotaAddr)){
       const rotaChecked=ethers.getAddress(rotaAddr);
       AD.rota=rotaChecked;
+
+      // ABI minima do Rota.sol
+      const AROTA=[
+        "function subscriptionId() view returns (uint64)",
+        "function setSubscriptionId(uint64) external"
+      ];
+      const CR=new ethers.Contract(rotaChecked,AROTA,SG);
 
       // Verifica se setRota() ja foi chamado com esse endereco
       const rotaAtual=await sc(()=>CE.rota(),ethers.ZeroAddress);
@@ -543,11 +553,35 @@ async function ligarContratos(){
       } else {
         lg("Rota.sol ja configurado no contrato","s");
       }
+
+      // ✅ Verifica e atualiza subscriptionId se necessario
+      if(subId&&Number(subId)>0){
+        AD.subid=subId;
+        try{
+          const subAtual=await CR.subscriptionId();
+          if(Number(subAtual)!==Number(subId)){
+            lg("Chamando setSubscriptionId("+subId+")...","p");
+            tt("Aguardando MetaMask","Confirme setSubscriptionId() no Rota.sol.","p");
+            const tx2=await CR.setSubscriptionId(Number(subId));
+            await tx2.wait();
+            lg("setSubscriptionId("+subId+") OK!","s");
+            tt("Subscription ID configurado!","ID: "+subId,"s");
+          } else {
+            lg("Subscription ID ja configurado: "+subId,"s");
+          }
+        }catch(e){
+          lg("Erro setSubscriptionId: "+fe2(e),"e");
+          tt("Erro ao setar Subscription ID",fe2(e),"e");
+        }
+      } else {
+        lg("Subscription ID nao informado — Chainlink Functions pode nao funcionar","p");
+      }
+
     } else {
       lg("Rota.sol nao informado — confirmar destino indisponivel","p");
     }
 
-    // Salva todos os enderecos incluindo rota
+    // Salva todos os enderecos incluindo rota e subid
     ss({...AD});
 
     await carregarPrecoETH();
