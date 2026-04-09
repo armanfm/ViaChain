@@ -133,6 +133,8 @@
         <div class="fg"><label>ViaChainGovernance</label><input id="agov" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>RideEscrow</label><input id="aesc" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>Cancelamento.sol</label><input id="acancel" spellcheck="false" placeholder="0x..."/></div>
+        <!-- ✅ NOVO: campo Rota.sol -->
+        <div class="fg"><label>Rota.sol</label><input id="arota" spellcheck="false" placeholder="0x..."/></div>
       </div>
       <div id="errbox"></div>
       <button class="btn bp" onclick="ligarContratos()">Entrar no app</button>
@@ -186,7 +188,6 @@
           <div class="fg"><label>Origem (endereco)</label><input id="ror" placeholder="Ex: Av. Boa Viagem, Recife" onchange="calcularOSRM()"/></div>
           <div class="fg"><label>Destino (endereco)</label><input id="rde" placeholder="Ex: Shopping Recife" onchange="calcularOSRM()"/></div>
         </div>
-        <!-- Coordenadas calculadas pelo OSRM -->
         <div class="grid2" style="margin-bottom:10px">
           <div class="fg"><label>Lat Origem</label><input id="rlat1" placeholder="Calculado pelo OSRM" readonly/></div>
           <div class="fg"><label>Lon Origem</label><input id="rlon1" placeholder="Calculado pelo OSRM" readonly/></div>
@@ -293,7 +294,6 @@ const AGOV=[
   "event DriverPriceUpdated(address indexed driver, uint256 newPrice)"
 ];
 
-// ── ABI atualizada — compativel com novo RideEscrow ──
 const AESC=[
   "function owner() view returns (address)",
   "function governance() view returns (address)",
@@ -304,7 +304,6 @@ const AESC=[
   "function setSystemOperator(address) external",
   "function setCancelamento(address) external",
   "function setRota(address) external",
-  // createRide agora recebe lat/lon gravados on-chain
   "function createRide(address,string,string,string,string) payable returns (uint256)",
   "function acceptRide(uint256) external",
   "function rejectRide(uint256) external",
@@ -313,11 +312,9 @@ const AESC=[
   "function confirmDestinationReached(uint256) external",
   "function confirmRideCompletion(uint256) external",
   "function finalizeAfterTimeout(uint256) external",
-  // Pull Payment — saque individual
   "function withdraw() external",
   "function getPendingWithdrawal(address) view returns (uint256)",
   "function pendingWithdrawals(address) view returns (uint256)",
-  // getRide — tuple atualizado com coordenadas e novos campos
   "function getRide(uint256) view returns (tuple(uint256 id,address passenger,address driver,uint256 quotedPriceWei,string latOrigem,string lonOrigem,string latDestino,string lonDestino,uint256 createdAt,uint256 acceptedAt,uint256 startedAt,uint256 driverConfirmedDestinationAt,uint256 completedAt,uint8 status))",
   "function getRideCoords(uint256) view returns (string,string,string,string)",
   "event RideCreated(uint256 indexed rideId,address indexed passenger,address indexed driver,uint256 quotedPriceWei,uint256 createdAt)",
@@ -325,8 +322,6 @@ const AESC=[
   "event Withdrawn(address indexed recipient,uint256 amount)"
 ];
 
-/* ── ORACLE ── */
-// ABI do Cancelamento.sol
 const ACANCEL=[
   "function cancelAfterStart(uint256,bytes) external",
   "function setSystemOperator(address) external",
@@ -350,7 +345,7 @@ const RC={1:"cbl",2:"cye",3:"cpu",4:"cpu",5:"cgr",6:"cre",7:"cre"};
 
 /* ── STATE ── */
 let P=null,SG=null,me="";
-let CN=null,CG=null,CE=null,CC=null; // CC = Cancelamento.sol
+let CN=null,CG=null,CE=null,CC=null;
 let AD={nft:"",gov:"",esc:""};
 let ST={drivers:[],rides:[],myP:null,
   no:"",go:"",eo:"",ng:"",gn:"",eg:"",sop:"",
@@ -406,7 +401,7 @@ async function carregarPrecoETH(){
   }
 }
 
-/* ── OSRM — calcula rota real pelas ruas ── */
+/* ── OSRM ── */
 async function calcularOSRM(){
   const or=document.getElementById("ror").value.trim();
   const de=document.getElementById("rde").value.trim();
@@ -417,7 +412,6 @@ async function calcularOSRM(){
   status.textContent="⏳ Calculando rota via OSRM + OpenStreetMap...";
 
   try{
-    // 1. Geocoding via Nominatim — converte endereço em coordenadas
     const [r1,r2]=await Promise.all([
       fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(or)}&format=json&limit=1`).then(r=>r.json()),
       fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(de)}&format=json&limit=1`).then(r=>r.json()),
@@ -431,7 +425,6 @@ async function calcularOSRM(){
     const lat2=parseFloat(r2[0].lat).toFixed(6);
     const lon2=parseFloat(r2[0].lon).toFixed(6);
 
-    // 2. OSRM — calcula distância real pelas ruas
     const osrm=await fetch(
       `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`
     ).then(r=>r.json());
@@ -440,10 +433,8 @@ async function calcularOSRM(){
 
     const km=(osrm.routes[0].distance/1000).toFixed(2);
 
-    // Salva coordenadas para usar no createRide()
     osrmData={lat1,lon1,lat2,lon2,km:Number(km)};
 
-    // Preenche campos readonly
     document.getElementById("rlat1").value=lat1;
     document.getElementById("rlon1").value=lon1;
     document.getElementById("rlat2").value=lat2;
@@ -488,6 +479,7 @@ async function conectar(){
     document.getElementById("agov").value=saved.gov||"";
     document.getElementById("aesc").value=saved.esc||"";
     document.getElementById("acancel").value=saved.cancel||"";
+    document.getElementById("arota").value=saved.rota||""; // ✅ restaura Rota.sol salvo
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
   }catch(e){
@@ -503,7 +495,7 @@ async function ligarContratos(){
     const nft=document.getElementById("anft").value.trim();
     const gov=document.getElementById("agov").value.trim();
     const esc=document.getElementById("aesc").value.trim();
-    if(!nft||!gov||!esc) throw new Error("Preencha os 3 enderecos.");
+    if(!nft||!gov||!esc) throw new Error("Preencha os 3 enderecos obrigatorios.");
     if(!ethers.isAddress(nft)) throw new Error("Endereco DriverNFT invalido.");
     if(!ethers.isAddress(gov)) throw new Error("Endereco Governance invalido.");
     if(!ethers.isAddress(esc)) throw new Error("Endereco RideEscrow invalido.");
@@ -513,23 +505,54 @@ async function ligarContratos(){
     if(c2==="0x") throw new Error("Governance: sem contrato nesse endereco.");
     if(c3==="0x") throw new Error("RideEscrow: sem contrato nesse endereco.");
     AD={nft:ethers.getAddress(nft),gov:ethers.getAddress(gov),esc:ethers.getAddress(esc)};
-    ss(AD); // salva nft, gov, esc, cancel
     CN=new ethers.Contract(AD.nft,ANFT,SG);
     CG=new ethers.Contract(AD.gov,AGOV,SG);
     CE=new ethers.Contract(AD.esc,AESC,SG);
     CO=new ethers.Contract(ORACLE_ADDR,AORACLE,P);
-    // Inicializa Cancelamento.sol se endereco foi fornecido
+
+    // ── Cancelamento.sol ──
     const cancelAddr=document.getElementById("acancel").value.trim();
     if(cancelAddr&&ethers.isAddress(cancelAddr)){
       CC=new ethers.Contract(ethers.getAddress(cancelAddr),ACANCEL,SG);
       AD.cancel=ethers.getAddress(cancelAddr);
       lg("Cancelamento.sol conectado","s");
     } else {
-      lg("Cancelamento.sol nao configurado — cancelamento apos inicio indisponivel","p");
+      lg("Cancelamento.sol nao configurado","p");
     }
+
+    // ── ✅ Rota.sol — conecta e chama setRota() se necessario ──
+    const rotaAddr=document.getElementById("arota").value.trim();
+    if(rotaAddr&&ethers.isAddress(rotaAddr)){
+      const rotaChecked=ethers.getAddress(rotaAddr);
+      AD.rota=rotaChecked;
+
+      // Verifica se setRota() ja foi chamado com esse endereco
+      const rotaAtual=await sc(()=>CE.rota(),ethers.ZeroAddress);
+      if(rotaAtual.toLowerCase()!==rotaChecked.toLowerCase()){
+        lg("Chamando setRota() no RideEscrow...","p");
+        tt("Aguardando MetaMask","Confirme setRota() no contrato.","p");
+        try{
+          const tx=await CE.setRota(rotaChecked);
+          await tx.wait();
+          lg("setRota() OK — Rota.sol configurado!","s");
+          tt("Rota.sol configurado!",sh(rotaChecked),"s");
+        }catch(e){
+          lg("Erro setRota: "+fe2(e),"e");
+          tt("Erro ao chamar setRota()",fe2(e),"e");
+        }
+      } else {
+        lg("Rota.sol ja configurado no contrato","s");
+      }
+    } else {
+      lg("Rota.sol nao informado — confirmar destino indisponivel","p");
+    }
+
+    // Salva todos os enderecos incluindo rota
+    ss({...AD});
+
     await carregarPrecoETH();
     lg("Contratos OK!","s");
-    tt("Contratos conectados","DriverNFT + Governance + Escrow + Oracle","s");
+    tt("Contratos conectados","DriverNFT + Governance + Escrow + Rota + Oracle","s");
     document.getElementById("s2").style.display="none";
     document.getElementById("s3").style.display="block";
     await refresh();
@@ -581,7 +604,6 @@ async function carregarState(){
   ST.myP=pp(rp);
 }
 
-/* ── Pull Payment — exibe saldo para saque ── */
 function renderSaque(){
   const sec=document.getElementById("saque-section");
   const val=document.getElementById("saque-val");
@@ -625,10 +647,12 @@ function renderStatus(){
   const ok1=ST.ng.toLowerCase()===AD.gov.toLowerCase();
   const ok2=ST.gn.toLowerCase()===AD.nft.toLowerCase();
   const ok3=ST.eg.toLowerCase()===AD.gov.toLowerCase();
+  const okRota=!!AD.rota;
   document.getElementById("cstatus").innerHTML=`
     <div class="sc"><div class="sl">DriverNFT</div><div class="sv">${H(sh(AD.nft))}</div></div>
     <div class="sc"><div class="sl">Governance</div><div class="sv">${H(sh(AD.gov))}</div></div>
     <div class="sc"><div class="sl">RideEscrow</div><div class="sv">${H(sh(AD.esc))}</div></div>
+    <div class="sc"><div class="sl">Rota.sol</div><div class="sv ${okRota?"ok":"bad"}">${okRota?"✅ "+sh(AD.rota):"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">NFT→Gov</div><div class="sv ${ok1?"ok":"bad"}">${ok1?"✅ OK":"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">Gov→NFT</div><div class="sv ${ok2?"ok":"bad"}">${ok2?"✅ OK":"❌ Verificar"}</div></div>
     <div class="sc"><div class="sl">Escrow→Gov</div><div class="sv ${ok3?"ok":"bad"}">${ok3?"✅ OK":"❌ Verificar"}</div></div>
@@ -636,7 +660,8 @@ function renderStatus(){
     <div class="sc"><div class="sl">OSRM (OpenStreetMap)</div><div class="sv ok">✅ Gratuito — sem API key</div></div>`;
   document.getElementById("cnote").innerHTML=
     (ok1?"✅":"❌ <b>Admin → DriverNFT.setGovernance()</b> precisa ser chamado!")+
-    (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)));
+    (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)))+
+    (okRota?"<br>✅ Rota.sol configurado no escrow.":"<br>❌ <b>Informe o endereco do Rota.sol para confirmar destino.</b>");
 }
 
 async function carregarDrivers(){
@@ -685,7 +710,6 @@ async function carregarCorridas(){
   for(let i=1;i<=tot;i++){
     const r=await sc(()=>CE.getRide(i),null);if(!r)continue;
     const m=gm(i)||{};
-    // tuple atualizado: id,passenger,driver,quotedPriceWei,latOrigem,lonOrigem,latDestino,lonDestino,createdAt,acceptedAt,startedAt,driverConfirmedDestinationAt,completedAt,status
     list.push({
       id:Number(r[0]),pass:r[1],driv:r[2],qw:r[3],
       latOr:r[4],lonOr:r[5],latDe:r[6],lonDe:r[7],
@@ -754,10 +778,8 @@ function renderMinhasCorridas(){
   if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣‍</div>Nenhuma corrida.</div>`;return}
   el.innerHTML=mine.map(r=>{
     let b="";
-    // Antes do inicio — devolve tudo ao passageiro
     if(r.st===1||r.st===2)b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
     if(r.st===2)b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
-    // Apos inicio — GPS captura posicao atual, OSRM calcula proporcional
     if(r.st===3){
       const ld2=encodeURIComponent(r.latDe||"");
       const nd2=encodeURIComponent(r.lonDe||"");
@@ -796,10 +818,8 @@ function renderMotAtivos(){
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">🚦</div>Nenhuma.</div>`;return}
   el.innerHTML=list.map(r=>{
     let b="";
-    // Motorista confirma chegada ao destino
     if(r.st===3){
       b+=`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`;
-      // Motorista cancela apos inicio — OSRM calcula proporcional ao percorrido
       const ld=encodeURIComponent(r.latDe||"");
       const nd=encodeURIComponent(r.lonDe||"");
       b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld}'),decodeURIComponent('${nd}'))">Cancelar corrida</button>`;
@@ -909,7 +929,6 @@ async function revogarMot(a){
   await tx("Revogando...",()=>CG.revokeDriver(a),"Revogado.",sh(a));
 }
 
-// ── CRIAR CORRIDA — agora passa lat/lon gravados on-chain via OSRM ──
 async function criarCorrida(){
   try{
     const da=document.getElementById("dsel").value;
@@ -928,7 +947,6 @@ async function criarCorrida(){
     lg("Criando corrida...","p");
     tt("Aguardando MetaMask","Valor: "+fe(tot)+" ETH — "+osrmData.km+" km","p");
 
-    // createRide agora recebe lat/lon on-chain
     const t=await CE.createRide(
       da,
       osrmData.lat1,
@@ -956,7 +974,7 @@ async function criarCorrida(){
     osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};
     document.getElementById("qkm").textContent="—";
     lg("Corrida #"+rid+" criada!","s");
-    tt("Corrida criada!","ID "+rid+" · "+osrmData.km+" km via OSRM","s");
+    tt("Corrida criada!","ID "+rid,"s");
     await refresh();
   }catch(e){lg("Erro: "+fe2(e),"e");tt("Erro",fe2(e),"e")}
 }
@@ -965,15 +983,11 @@ async function aceitarCorrida(id){await tx("Aceitando #"+id,()=>CE.acceptRide(id
 async function rejeitarCorrida(id){await tx("Rejeitando #"+id,()=>CE.rejectRide(id),"Rejeitada #"+id,"ID "+id)}
 async function cancelarCorrida(id){await tx("Cancelando #"+id,()=>CE.cancelBeforeStart(id),"Cancelada #"+id,"ID "+id)}
 
-// Cancelamento apos inicio — GPS captura posicao atual do motorista
-// OSRM calcula distancia percorrida — Pull Payment distribui proporcional
-// Funciona para passageiro E motorista — qualquer lado pode cancelar
 async function cancelarAposInicio(rideId, latDe, lonDe){
   try{
     lg("Capturando GPS atual...","p");
     tt("Aguardando GPS","Permita o acesso a localizacao.","p");
 
-    // Captura posicao GPS atual do dispositivo
     const pos = await new Promise((res,rej)=>
       navigator.geolocation.getCurrentPosition(res, rej, {
         enableHighAccuracy: true,
@@ -987,9 +1001,6 @@ async function cancelarAposInicio(rideId, latDe, lonDe){
 
     lg("GPS: "+lat1+","+lon1+" — codificando...","p");
 
-    // Empacota as 4 coordenadas para o Cancelamento.sol
-    // lat1/lon1 = posicao atual do motorista (GPS)
-    // lat2/lon2 = destino original gravado on-chain
     const coords = ethers.AbiCoder.defaultAbiCoder().encode(
       ["string","string","string","string"],
       [lat1, lon1, String(latDe), String(lonDe)]
@@ -1010,7 +1021,6 @@ async function cancelarAposInicio(rideId, latDe, lonDe){
 }
 async function iniciarCorrida(id){await tx("Iniciando #"+id,()=>CE.startRide(id),"Iniciada #"+id,"ID "+id)}
 async function confirmarDestino(id){
-  // confirmDestinationReached agora aciona Rota.sol → Chainlink OSRM automaticamente
   await tx(
     "Confirmando destino #"+id,
     ()=>CE.confirmDestinationReached(id),
@@ -1030,4 +1040,3 @@ function tab(n){
 </script>
 </body>
 </html>
-
