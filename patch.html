@@ -515,9 +515,26 @@ async function ligarContratos(){
     // ── Cancelamento.sol ──
     const cancelAddr=document.getElementById("acancel").value.trim();
     if(cancelAddr&&ethers.isAddress(cancelAddr)){
-      CC=new ethers.Contract(ethers.getAddress(cancelAddr),ACANCEL,SG);
-      AD.cancel=ethers.getAddress(cancelAddr);
-      lg("Cancelamento.sol conectado","s");
+      const cancelChecked=ethers.getAddress(cancelAddr);
+      CC=new ethers.Contract(cancelChecked,ACANCEL,SG);
+      AD.cancel=cancelChecked;
+      // Verifica se setCancelamento() ja foi chamado no RideEscrow
+      const cancelAtual=await sc(()=>CE.cancelamento(),ethers.ZeroAddress);
+      if(cancelAtual.toLowerCase()!==cancelChecked.toLowerCase()){
+        lg("Chamando setCancelamento() no RideEscrow...","p");
+        tt("Aguardando MetaMask","Confirme setCancelamento() no contrato.","p");
+        try{
+          const txc=await CE.setCancelamento(cancelChecked);
+          await txc.wait();
+          lg("setCancelamento() OK!","s");
+          tt("Cancelamento.sol configurado!",sh(cancelChecked),"s");
+        }catch(e){
+          lg("Erro setCancelamento: "+fe2(e),"e");
+          tt("Erro ao chamar setCancelamento()",fe2(e),"e");
+        }
+      } else {
+        lg("Cancelamento.sol ja configurado no contrato","s");
+      }
     } else {
       lg("Cancelamento.sol nao configurado","p");
     }
