@@ -1,0 +1,14 @@
+## 📜 Contratos Deployados — Sepolia Testnet
+
+| Contrato | Endereço | Explorer |
+|---|---|---|
+| RideEscrow | 0x36C686F14D4944382441f49Cfb29BF3Be2bdF9D9 | [Ver no Etherscan](https://sepolia.etherscan.io/address/0x36C686F14D4944382441f49Cfb29BF3Be2bdF9D9) |
+| Rota | 0x10ecB2DA5239F0355b7B81BC5b387064F7C883A5 | [Ver no Etherscan](https://sepolia.etherscan.io/address/0x10ecB2DA5239F0355b7B81BC5b387064F7C883A5) |
+| Cancelamento | 0x3C2DA49D47A41a65605b9036935Bf4aE9a443d37 | [Ver no Etherscan](https://sepolia.etherscan.io/address/0x3C2DA49D47A41a65605b9036935Bf4aE9a443d37) |
+
+## 🔗 Chainlink Functions
+| Parâmetro | Valor |
+|---|---|
+| Subscription ID | 6455 |
+| Network | Sepolia Testnet |
+| DON ID | fun-ethereum-sepolia-1 |
