@@ -758,7 +758,11 @@ function renderMinhasCorridas(){
     if(r.st===1||r.st===2)b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
     if(r.st===2)b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
     // Apos inicio — GPS captura posicao atual, OSRM calcula proporcional
-    if(r.st===3)b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},'${r.latDe}','${r.lonDe}')">Cancelar corrida</button>`;
+    if(r.st===3){
+      const ld2=encodeURIComponent(r.latDe||"");
+      const nd2=encodeURIComponent(r.lonDe||"");
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld2}'),decodeURIComponent('${nd2}'))">Cancelar corrida</button>`;
+    }
     if(r.st===4)b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
     if(r.st===4)b+=`<button class="btn bo bsm bfull" onclick="timeout(${r.id})">Timeout</button>`;
     return rc(r,b);
@@ -793,9 +797,13 @@ function renderMotAtivos(){
   el.innerHTML=list.map(r=>{
     let b="";
     // Motorista confirma chegada ao destino
-    if(r.st===3)b+=`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`;
-    // Motorista pode cancelar apos inicio — OSRM calcula proporcional
-    if(r.st===3)b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},'${r.latDe}','${r.lonDe}')">Cancelar corrida</button>`;
+    if(r.st===3){
+      b+=`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`;
+      // Motorista cancela apos inicio — OSRM calcula proporcional ao percorrido
+      const ld=encodeURIComponent(r.latDe||"");
+      const nd=encodeURIComponent(r.lonDe||"");
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld}'),decodeURIComponent('${nd}'))">Cancelar corrida</button>`;
+    }
     return rc(r,b);
   }).join("");
 }
