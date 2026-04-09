@@ -1,4 +1,3 @@
-
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
@@ -433,7 +432,7 @@ async function calcularOSRM(){
     const km=(osrm.routes[0].distance/1000).toFixed(2);
 
     // Salva coordenadas para usar no createRide()
-    osrmData={lat1,lon1,lat2,lon2,km:Number(km)};
+    osrmData={lat1,lon1,lon2,lat2,km:Number(km)};
 
     // Preenche campos readonly
     document.getElementById("rlat1").value=lat1;
@@ -734,14 +733,32 @@ function renderMinhasCorridas(){
   const el=document.getElementById("minhas");
   const mine=ST.rides.filter(r=>r.pass.toLowerCase()===me.toLowerCase());
   if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣️</div>Nenhuma corrida.</div>`;return}
-  el.innerHTML=mine.map(r=>{
-    let b="";
-    if(r.st===1||r.st===2)b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
-    if(r.st===2)b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
-    if(r.st===4)b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
-    if(r.st===4)b+=`<button class="btn bo bsm bfull" onclick="timeout(${r.id})">Timeout</button>`;
-    return rc(r,b);
-  }).join("");
+  let html = "";
+  for(const r of mine){
+    let b = "";
+    // Cancelamento permitido apenas nos status iniciais (Criada ou Aceita)
+    if(r.st===1 || r.st===2){
+      b += `<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
+    }
+    if(r.st===2){
+      b += `<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
+    }
+    // ✅ CORREÇÃO: Botão de conclusão apenas quando status === 5 (Concluída pelo oracle)
+    if(r.st===5){
+      b += `<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
+    }
+    // Se status for 4, mostra mensagem educativa e agenda auto-refresh
+    if(r.st===4){
+      b += `<div class="notice" style="margin-top:8px;">⏳ Aguardando cálculo da rota pelo oracle Chainlink... Atualize em alguns segundos.</div>`;
+      // Auto-refresh após 5 segundos (opcional, mas melhora UX)
+      setTimeout(() => refresh(), 5000);
+    }
+    if(r.st===4 || r.st===5){
+      b += `<button class="btn bo bsm bfull" onclick="timeout(${r.id})">Timeout (finalizar)</button>`;
+    }
+    html += rc(r, b);
+  }
+  el.innerHTML = html;
 }
 
 function renderMotoristas(){
