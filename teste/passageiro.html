@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>ViaChain · Passageiro - Transporte Descentralizado</title>
+  <!-- Leaflet (mapa) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Ethers v6 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0c12;
+      --surface: #11161f;
+      --card: #16202c;
+      --border: #253141;
+      --accent: #3b82f6;
+      --accent2: #8b5cf6;
+      --green: #10b981;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+      --text: #edf2f7;
+      --muted: #7e8a98;
+      --radius: 1rem;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      padding: 1rem 1.5rem 3rem;
+    }
+    .container { max-width: 1280px; margin: 0 auto; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      background: var(--surface);
+      padding: 0.8rem 1.5rem;
+      border-radius: 2rem;
+      border: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+    }
+    .logo {
+      font-size: 1.7rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .wallet {
+      background: var(--card);
+      padding: 0.5rem 1rem;
+      border-radius: 2rem;
+      font-size: 0.85rem;
+      border: 1px solid var(--border);
+      display: flex;
+      gap: 0.7rem;
+      align-items: baseline;
+    }
+    .badge { background: #1e293b; padding: 0.2rem 0.6rem; border-radius: 2rem; }
+    .grid-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.8rem;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      text-align: center;
+    }
+    .stat-number { font-size: 1.9rem; font-weight: 800; color: var(--accent); }
+    .stat-label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem;
+      margin-bottom: 1.8rem;
+    }
+    .card-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 8px; }
+    .card-sub { color: var(--muted); font-size: 0.8rem; margin-bottom: 1.2rem; border-left: 3px solid var(--accent); padding-left: 10px; }
+    .map-wrap { border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; height: 260px; border: 1px solid var(--border); }
+    #map { height: 100%; width: 100%; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    .input-field { display: flex; flex-direction: column; gap: 0.4rem; }
+    .input-field label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--muted); letter-spacing: 0.3px; }
+    input, select, button {
+      font-family: inherit;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 0.7rem 0.9rem;
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    .btn {
+      border: none;
+      padding: 0.7rem 1.2rem;
+      border-radius: 40px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      transition: 0.15s;
+    }
+    .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: white; }
+    .btn-success { background: var(--green); border: none; color: white; }
+    .btn-danger { background: var(--red); border: none; color: white; }
+    .btn-outline { background: transparent; }
+    .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.75rem; }
+    .flex-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
+    .driver-list { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+    .driver-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: 0.1s;
+    }
+    .driver-card.selected { border-color: var(--accent); background: rgba(59,130,246,0.1); box-shadow: 0 0 0 1px var(--accent); }
+    .driver-info h4 { font-size: 0.95rem; font-weight: 600; }
+    .driver-info p { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .driver-price { font-weight: 700; color: var(--green); }
+    .quote-panel {
+      background: var(--surface);
+      border-radius: 16px;
+      padding: 1rem;
+      margin: 1rem 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+    }
+    .quote-item { text-align: center; }
+    .quote-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+    .quote-value { font-weight: 800; font-size: 1rem; }
+    .ride-history { display: flex; flex-direction: column; gap: 12px; }
+    .ride-item {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 14px;
+      border-left: 4px solid var(--accent);
+    }
+    .ride-header { display: flex; justify-content: space-between; flex-wrap: wrap; margin-bottom: 8px; }
+    .status-badge { font-size: 0.7rem; padding: 4px 10px; border-radius: 30px; font-weight: 600; }
+    .status-1 { background: #3b2e1e; color: var(--yellow); }
+    .status-2 { background: #1e3a5f; color: #60a5fa; }
+    .status-3 { background: #2e1065; color: #c084fc; }
+    .status-4 { background: #1e3a5f; color: #60a5fa; }
+    .status-5 { background: #14532d; color: var(--green); }
+    .status-6, .status-7 { background: #450a0a; color: var(--red); }
+    .ride-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .toast-area { position: fixed; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+    .toast { background: var(--surface); border-left: 4px solid var(--accent); padding: 12px 18px; border-radius: 12px; font-size: 0.85rem; max-width: 320px; box-shadow: 0 8px 20px rgba(0,0,0,0.3); animation: slideIn 0.2s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+    .contract-status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .status-chip { background: var(--surface); border-radius: 12px; padding: 8px 12px; display: flex; justify-content: space-between; }
+    .ok { color: var(--green); }
+    .bad { color: var(--red); }
+    .loading { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .saque-box { background: rgba(34,197,94,.07); border: 1px solid var(--green); border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .saque-val { color: var(--green); font-weight: 700; font-size: 1rem; }
+    @media (max-width: 700px) { body { padding: 1rem; } .form-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">🚗 ViaChain · Passageiro</div>
+    <div class="wallet">
+      <span>🦊</span>
+      <span id="walletAddress">Não conectado</span>
+      <span class="badge" id="walletBal">—</span>
+    </div>
+  </div>
+
+  <!-- Status dos contratos -->
+  <div class="card">
+    <div class="card-title">🔗 Status dos contratos</div>
+    <div id="contractStatusGrid" class="contract-status-grid"></div>
+    <div id="contractNotes" style="font-size:0.75rem; color:var(--muted); margin-top: 8px;"></div>
+  </div>
+
+  <!-- Estatísticas -->
+  <div class="grid-stats" id="statsArea">
+    <div class="stat-card"><div class="stat-number" id="activeRides">0</div><div class="stat-label">Corridas ativas</div></div>
+    <div class="stat-card"><div class="stat-number" id="approvedDrivers">0</div><div class="stat-label">Motoristas aprovados</div></div>
+    <div class="stat-card"><div class="stat-number" id="ethBalance">0.000</div><div class="stat-label">Saldo ETH (carteira)</div></div>
+    <div class="stat-card"><div class="stat-number" id="ethPriceBrl">R$ —</div><div class="stat-label">ETH / BRL (Chainlink)</div></div>
+  </div>
+
+  <!-- Saque -->
+  <div id="withdrawSection" style="display: none;" class="card">
+    <div class="card-title">💰 Saldo disponível para saque</div>
+    <div class="saque-box">
+      <div>
+        <div class="sl">Saldo pendente</div>
+        <div class="saque-val" id="pendingWithdrawVal">0 ETH</div>
+      </div>
+      <button class="btn btn-success btn-sm" id="withdrawBtn">💸 Sacar ETH</button>
+    </div>
+  </div>
+
+  <!-- Mapa -->
+  <div class="card">
+    <div class="card-title">🗺️ Visualizar rota</div>
+    <div class="map-wrap"><div id="map"></div></div>
+  </div>
+
+  <!-- Criar corrida -->
+  <div class="card">
+    <div class="card-title">➕ Criar corrida</div>
+    <div class="card-sub">
+      Selecione o motorista e preencha a rota. As coordenadas são calculadas automaticamente
+      via OSRM (OpenStreetMap) — gratuito e sem API key.
+    </div>
+    <div class="form-grid">
+      <div class="input-field"><label>📍 Origem (endereço)</label><input type="text" id="originAddr" placeholder="Ex: Av. Boa Viagem, Recife" /></div>
+      <div class="input-field"><label>📍 Destino (endereço)</label><input type="text" id="destAddr" placeholder="Ex: Shopping Recife" /></div>
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-outline" id="calcRouteBtn">🗺️ Recalcular rota (OSRM)</button>
+      <button class="btn btn-outline btn-sm" id="refreshBtn">↻ Atualizar dados</button>
+    </div>
+    <div id="routeStatus" style="font-size: 0.8rem; margin-top: 8px; color: var(--yellow);"></div>
+    
+    <div style="margin-top: 20px;"><strong>👨‍✈️ Escolha um motorista</strong></div>
+    <div id="driverListContainer" class="driver-list"></div>
+
+    <div id="quoteBox" class="quote-panel" style="display: none;">
+      <div class="quote-item"><div class="quote-label">Preço/km</div><div class="quote-value" id="pricePerKm">—</div></div>
+      <div class="quote-item"><div class="quote-label">Distância OSRM</div><div class="quote-value" id="distanceKm">—</div></div>
+      <div class="quote-item"><div class="quote-label">Total ETH</div><div class="quote-value" id="totalEth">—</div></div>
+      <div class="quote-item"><div class="quote-label">Total BRL</div><div class="quote-value" id="totalBrl">—</div></div>
+      <div class="quote-item"><div class="quote-label">Categoria</div><div class="quote-value" id="driverCat">—</div></div>
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-primary" id="createRideBtn" disabled>🚀 Criar corrida on-chain</button>
+    </div>
+  </div>
+
+  <!-- Minhas corridas -->
+  <div class="card">
+    <div class="card-title">📋 Minhas corridas</div>
+    <div id="myRidesList" class="ride-history"></div>
+  </div>
+</div>
+<div id="toastRoot" class="toast-area"></div>
+
+<script>
+  (function(){
+    // ------------------- CONFIGURAÇÃO DOS CONTRATOS ------------------
+    const ORACLE_ADDR = "0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07"; // ETH/USD Sepolia
+    const AORACLE = ["function getETHPrice() view returns (int256)"];
+    const A_DRIVER_NFT = ["function owner() view returns (address)","function governance() view returns (address)","function hasActiveNFT(address) view returns (bool)"];
+    const A_GOV = [
+      "function owner() view returns (address)","function driverNFT() view returns (address)","function isApprovedDriver(address) view returns (bool)",
+      "function getDriverCategory(address) view returns (uint8)","function getDriverPrice(address) view returns (uint256)",
+      "function getDriverProfile(address) view returns (address,string,string,string,uint256,uint8,uint8,uint256)"
+    ];
+    const A_ESCROW = [
+      "function owner() view returns (address)","function governance() view returns (address)","function systemOperator() view returns (address)",
+      "function cancelamento() view returns (address)","function rota() view returns (address)","function rideCounter() view returns (uint256)",
+      "function createRide(address,string,string,string,string) payable returns (uint256)",
+      "function cancelBeforeStart(uint256) external","function startRide(uint256) external",
+      "function confirmDestinationReached(uint256) external","function confirmRideCompletion(uint256) external",
+      "function withdraw() external","function pendingWithdrawals(address) view returns (uint256)",
+      "function getRide(uint256) view returns (tuple(uint256,address,address,uint256,string,string,string,string,uint256,uint256,uint256,uint256,uint256,uint8))"
+    ];
+    const A_CANCEL = ["function cancelAfterStart(uint256,bytes) external"];
+    const BRL_RATE = 5.85;
+    
+    let provider, signer, userAddress = "";
+    let contractNFT, contractGov, contractEscrow, contractCancel, chainlinkOracle;
+    let contractsAddr = { nft: "", gov: "", escrow: "", cancel: "" };
+    let ethPriceUSD = 0;
+    let driversList = [];
+    let userRides = [];
+    let selectedDriverAddr = null;
+    let currentRoute = { km: 0, lat1: "", lon1: "", lat2: "", lon2: "" };
+    let map, routeLayer, markerStart, markerEnd;
+
+    // Toasts
+    const toastRoot = document.getElementById("toastRoot");
+    function toast(msg, type="info"){ 
+      const div = document.createElement("div");
+      div.className = "toast";
+      div.style.borderLeftColor = type==="success"?"#10b981": type==="error"?"#ef4444":"#3b82f6";
+      div.innerHTML = `<span>${msg}</span>`;
+      toastRoot.appendChild(div);
+      setTimeout(()=>div.remove(), 4500);
+    }
+
+    function initMap(){
+      map = L.map('map').setView([-23.5505, -46.6333], 12);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+    }
+
+    async function connectWallet(){
+      if(!window.ethereum){ toast("MetaMask não encontrada!", "error"); return false; }
+      try{
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+        document.getElementById("walletAddress").innerText = userAddress.slice(0,6)+"..."+userAddress.slice(-4);
+        const bal = await provider.getBalance(userAddress);
+        document.getElementById("walletBal").innerText = Number(ethers.formatEther(bal)).toFixed(4)+" ETH";
+        document.getElementById("ethBalance").innerText = Number(ethers.formatEther(bal)).toFixed(4);
+        toast(`Conectado: ${userAddress.slice(0,8)}...`, "success");
+        
+        // Solicitar endereços dos contratos
+        const nft = prompt("Endereço DriverNFT:", localStorage.getItem("vc_nft") || "");
+        const gov = prompt("Endereço Governance:", localStorage.getItem("vc_gov") || "");
+        const esc = prompt("Endereço RideEscrow:", localStorage.getItem("vc_esc") || "");
+        const cancel = prompt("Endereço Cancelamento.sol (opcional):", localStorage.getItem("vc_cancel") || "");
+        if(!nft || !gov || !esc) throw new Error("Endereços obrigatórios");
+        if(!ethers.isAddress(nft)||!ethers.isAddress(gov)||!ethers.isAddress(esc)) throw new Error("Endereço inválido");
+        contractsAddr = { nft, gov, escrow: esc, cancel: cancel || "" };
+        localStorage.setItem("vc_nft", nft); localStorage.setItem("vc_gov", gov); localStorage.setItem("vc_esc", esc);
+        if(cancel) localStorage.setItem("vc_cancel", cancel);
+        
+        contractNFT = new ethers.Contract(nft, A_DRIVER_NFT, signer);
+        contractGov = new ethers.Contract(gov, A_GOV, signer);
+        contractEscrow = new ethers.Contract(esc, A_ESCROW, signer);
+        if(cancel && ethers.isAddress(cancel)) contractCancel = new ethers.Contract(cancel, A_CANCEL, signer);
+        chainlinkOracle = new ethers.Contract(ORACLE_ADDR, AORACLE, provider);
+        return true;
+      }catch(e){ toast("Erro: "+e.message, "error"); return false; }
+    }
+
+    async function loadEthPrice(){
+      try{
+        const price = await chainlinkOracle.getETHPrice();
+        ethPriceUSD = Number(price) / 1e8;
+        const brl = (ethPriceUSD * BRL_RATE).toFixed(2);
+        document.getElementById("ethPriceBrl").innerHTML = `R$ ${brl}`;
+      }catch(e){ ethPriceUSD=0; document.getElementById("ethPriceBrl").innerHTML = "Indisponível"; }
+    }
+
+    async function fetchApprovedDrivers(){
+      try{
+        const filter = contractGov.filters.DriverApproved();
+        const events = await contractGov.queryFilter(filter, -10000);
+        const addrsSet = new Set();
+        for(const ev of events){ if(ev.args && ev.args.driver) addrsSet.add(ev.args.driver.toLowerCase()); }
+        const list = [];
+        for(const addr of addrsSet){
+          try{
+            const profile = await contractGov.getDriverProfile(addr);
+            if(!profile || profile[0] === ethers.ZeroAddress) continue;
+            const isAppr = await contractGov.isApprovedDriver(addr);
+            if(!isAppr) continue;
+            const priceWei = await contractGov.getDriverPrice(addr);
+            const category = await contractGov.getDriverCategory(addr);
+            list.push({
+              addr: ethers.getAddress(addr),
+              model: profile[1],
+              plate: profile[2],
+              cat: category,
+              priceWei: priceWei,
+              priceEth: Number(ethers.formatEther(priceWei))
+            });
+          }catch(e){}
+        }
+        driversList = list;
+        document.getElementById("approvedDrivers").innerText = driversList.length;
+        renderDriverList();
+      }catch(e){ driversList=[]; renderDriverList();}
+    }
+
+    function renderDriverList(){
+      const container = document.getElementById("driverListContainer");
+      if(driversList.length===0){ container.innerHTML = `<div style="color:var(--muted);text-align:center;">Nenhum motorista aprovado ainda.</div>`; return; }
+      container.innerHTML = driversList.map(d => `
+        <div class="driver-card" data-addr="${d.addr}">
+          <div class="driver-info">
+            <h4>${d.model} · ${d.plate}</h4>
+            <p>${d.addr.slice(0,6)}...${d.addr.slice(-4)} • Categoria ${d.cat}</p>
+          </div>
+          <div class="driver-price">${d.priceEth.toFixed(6)} ETH/km</div>
+        </div>
+      `).join("");
+      document.querySelectorAll(".driver-card").forEach(card => {
+        card.addEventListener("click", () => {
+          document.querySelectorAll(".driver-card").forEach(c=>c.classList.remove("selected"));
+          card.classList.add("selected");
+          selectedDriverAddr = card.getAttribute("data-addr");
+          updateQuote();
+        });
+      });
+    }
+
+    async function calculateOSRM(){
+      const origin = document.getElementById("originAddr").value.trim();
+      const dest = document.getElementById("destAddr").value.trim();
+      if(!origin || !dest){ toast("Preencha origem e destino","error"); return; }
+      document.getElementById("routeStatus").innerHTML = "⏳ Geocodificando e calculando rota...";
+      try{
+        const [geoOrig, geoDest] = await Promise.all([
+          fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(origin)}&format=json&limit=1`).then(r=>r.json()),
+          fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(dest)}&format=json&limit=1`).then(r=>r.json())
+        ]);
+        if(!geoOrig[0] || !geoDest[0]) throw new Error("Endereço não encontrado");
+        const lat1 = parseFloat(geoOrig[0].lat).toFixed(6);
+        const lon1 = parseFloat(geoOrig[0].lon).toFixed(6);
+        const lat2 = parseFloat(geoDest[0].lat).toFixed(6);
+        const lon2 = parseFloat(geoDest[0].lon).toFixed(6);
+        const osrmResp = await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson`);
+        const osrmJson = await osrmResp.json();
+        if(osrmJson.code !== "Ok") throw new Error("OSRM não encontrou rota");
+        const km = osrmJson.routes[0].distance / 1000;
+        currentRoute = { km, lat1, lon1, lat2, lon2 };
+        document.getElementById("routeStatus").innerHTML = `✅ Rota calculada: ${km.toFixed(2)} km`;
+        document.getElementById("distanceKm").innerText = km.toFixed(2)+" km";
+        if(routeLayer) map.removeLayer(routeLayer);
+        routeLayer = L.geoJSON(osrmJson.routes[0].geometry, { style: { color: "#3b82f6", weight: 4 } }).addTo(map);
+        if(markerStart) map.removeLayer(markerStart);
+        if(markerEnd) map.removeLayer(markerEnd);
+        markerStart = L.marker([lat1, lon1]).addTo(map).bindPopup("Origem");
+        markerEnd = L.marker([lat2, lon2]).addTo(map).bindPopup("Destino");
+        map.fitBounds([[lat1, lon1], [lat2, lon2]], { padding: [40,40] });
+        updateQuote();
+      }catch(err){
+        document.getElementById("routeStatus").innerHTML = "❌ Erro: "+err.message;
+        currentRoute.km = 0;
+        updateQuote();
+      }
+    }
+
+    function updateQuote(){
+      if(!selectedDriverAddr || currentRoute.km <= 0){
+        document.getElementById("quoteBox").style.display = "none";
+        document.getElementById("createRideBtn").disabled = true;
+        return;
+      }
+      const driver = driversList.find(d => d.addr.toLowerCase() === selectedDriverAddr.toLowerCase());
+      if(!driver) return;
+      const totalWei = BigInt(driver.priceWei) * BigInt(Math.round(currentRoute.km * 1000)) / 1000n;
+      const totalEth = Number(ethers.formatEther(totalWei));
+      document.getElementById("pricePerKm").innerText = driver.priceEth.toFixed(6)+" ETH";
+      document.getElementById("distanceKm").innerText = currentRoute.km.toFixed(2)+" km";
+      document.getElementById("totalEth").innerText = totalEth.toFixed(6)+" ETH";
+      if(ethPriceUSD > 0){
+        const brlTotal = (totalEth * ethPriceUSD * BRL_RATE).toFixed(2);
+        document.getElementById("totalBrl").innerHTML = `R$ ${brlTotal}`;
+      } else { document.getElementById("totalBrl").innerHTML = "—"; }
+      document.getElementById("driverCat").innerHTML = driver.cat;
+      document.getElementById("quoteBox").style.display = "grid";
+      document.getElementById("createRideBtn").disabled = false;
+    }
+
+    async function createRideOnChain(){
+      if(!selectedDriverAddr || currentRoute.km <= 0){ toast("Selecione motorista e calcule a rota","error"); return; }
+      const driver = driversList.find(d=>d.addr.toLowerCase() === selectedDriverAddr.toLowerCase());
+      if(!driver) return;
+      const totalWei = BigInt(driver.priceWei) * BigInt(Math.round(currentRoute.km * 1000)) / 1000n;
+      try{
+        toast("Criando corrida... Aguarde confirmação","info");
+        const tx = await contractEscrow.createRide(
+          selectedDriverAddr,
+          currentRoute.lat1, currentRoute.lon1, currentRoute.lat2, currentRoute.lon2,
+          { value: totalWei }
+        );
+        await tx.wait();
+        toast("Corrida criada com sucesso!","success");
+        document.getElementById("originAddr").value = "";
+        document.getElementById("destAddr").value = "";
+        currentRoute = { km:0, lat1:"", lon1:"", lat2:"", lon2:"" };
+        document.getElementById("quoteBox").style.display = "none";
+        document.getElementById("createRideBtn").disabled = true;
+        await loadUserRides();
+        await loadPendingWithdraw();
+      }catch(e){ toast("Erro: "+e.message, "error"); }
+    }
+
+    async function loadUserRides(){
+      try{
+        const total = Number(await contractEscrow.rideCounter());
+        const rides = [];
+        for(let i=1; i<=total; i++){
+          const ride = await contractEscrow.getRide(i);
+          if(ride[1].toLowerCase() === userAddress.toLowerCase()){
+            rides.push({ id: Number(ride[0]), passenger: ride[1], driver: ride[2], priceWei: ride[3],
+              latOrig: ride[4], lonOrig: ride[5], latDest: ride[6], lonDest: ride[7],
+              createdAt: Number(ride[8]), acceptedAt: Number(ride[9]), startedAt: Number(ride[10]),
+              driverConfirmedAt: Number(ride[11]), completedAt: Number(ride[12]), status: Number(ride[13]) });
+          }
+        }
+        userRides = rides.sort((a,b)=>b.id - a.id);
+        renderMyRides();
+        const active = userRides.filter(r=>[1,2,3,4].includes(r.status)).length;
+        document.getElementById("activeRides").innerText = active;
+      }catch(e){ console.warn(e); }
+    }
+
+    function renderMyRides(){
+      const container = document.getElementById("myRidesList");
+      if(!userRides.length){ container.innerHTML = `<div style="text-align:center;color:var(--muted);">Nenhuma corrida encontrada.</div>`; return; }
+      const statusMap = {1:"Criada",2:"Aceita",3:"Iniciada",4:"Dest. Confirmado",5:"Concluída",6:"Cancelada",7:"Rejeitada"};
+      container.innerHTML = userRides.map(ride => {
+        let actions = "";
+        if(ride.status === 1 || ride.status === 2) actions += `<button class="btn btn-danger btn-sm" onclick="window.cancelBeforeStart(${ride.id})">Cancelar</button>`;
+        if(ride.status === 2) actions += `<button class="btn btn-primary btn-sm" onclick="window.startRide(${ride.id})">Iniciar</button>`;
+        if(ride.status === 3) actions += `<button class="btn btn-danger btn-sm" onclick="window.cancelAfterStartGPS(${ride.id},'${ride.latDest}','${ride.lonDest}')">Cancelar (GPS)</button>`;
+        if(ride.status === 4) actions += `<button class="btn btn-success btn-sm" onclick="window.confirmCompletion(${ride.id})">Finalizar corrida</button>`;
+        const totalEth = Number(ethers.formatEther(ride.priceWei)).toFixed(5);
+        return `<div class="ride-item">
+          <div class="ride-header"><strong>#${ride.id}</strong><span class="status-badge status-${ride.status}">${statusMap[ride.status]}</span></div>
+          <div>Motorista: ${ride.driver.slice(0,8)}...</div>
+          <div>Valor: ${totalEth} ETH</div>
+          <div class="ride-actions">${actions}</div>
+        </div>`;
+      }).join("");
+    }
+
+    async function cancelBeforeStart(id){ await execTx(()=>contractEscrow.cancelBeforeStart(id), "Corrida cancelada, reembolso processado."); }
+    async function startRide(id){ await execTx(()=>contractEscrow.startRide(id), "Corrida iniciada!"); }
+    async function confirmCompletion(id){ await execTx(()=>contractEscrow.confirmRideCompletion(id), "Corrida concluída! Pagamento liberado."); }
+    async function cancelAfterStartGPS(rideId, latDest, lonDest){
+      if(!navigator.geolocation){ toast("Geolocalização não suportada","error"); return; }
+      navigator.geolocation.getCurrentPosition(async (pos)=>{
+        const latCur = pos.coords.latitude.toFixed(6);
+        const lonCur = pos.coords.longitude.toFixed(6);
+        const encoded = ethers.AbiCoder.defaultAbiCoder().encode(["string","string","string","string"],[latCur, lonCur, latDest, lonDest]);
+        if(!contractCancel){ toast("Cancelamento.sol não configurado","error"); return; }
+        await execTx(()=>contractCancel.cancelAfterStart(rideId, encoded), "Cancelamento proporcional solicitado.");
+      }, (err)=>{ toast("Permissão de GPS necessária para cancelamento","error"); });
+    }
+    async function execTx(callback, successMsg){
+      try{
+        toast("Enviando transação...","info");
+        const tx = await callback();
+        await tx.wait();
+        toast(successMsg, "success");
+        await loadUserRides();
+        await loadPendingWithdraw();
+      }catch(e){ toast("Erro: "+e.message, "error"); }
+    }
+
+    async function loadPendingWithdraw(){
+      try{
+        const pending = await contractEscrow.pendingWithdrawals(userAddress);
+        if(pending > 0n){
+          document.getElementById("withdrawSection").style.display = "block";
+          document.getElementById("pendingWithdrawVal").innerHTML = `${ethers.formatEther(pending)} ETH`;
+        } else { document.getElementById("withdrawSection").style.display = "none"; }
+      }catch(e){}
+    }
+    async function withdrawFunds(){ await execTx(()=>contractEscrow.withdraw(), "Saque realizado!"); }
+
+    async function loadContractStatus(){
+      if(!contractNFT || !contractGov || !contractEscrow) return;
+      const nftGov = await contractNFT.governance();
+      const govNFT = await contractGov.driverNFT();
+      const escGov = await contractEscrow.governance();
+      const ok1 = nftGov.toLowerCase() === contractsAddr.gov.toLowerCase();
+      const ok2 = govNFT.toLowerCase() === contractsAddr.nft.toLowerCase();
+      const ok3 = escGov.toLowerCase() === contractsAddr.gov.toLowerCase();
+      const cancelAddr = await contractEscrow.cancelamento();
+      const hasCancel = cancelAddr !== ethers.ZeroAddress;
+      document.getElementById("contractStatusGrid").innerHTML = `
+        <div class="status-chip"><span>DriverNFT</span><span>${contractsAddr.nft.slice(0,8)}...</span></div>
+        <div class="status-chip"><span>Governance</span><span>${contractsAddr.gov.slice(0,8)}...</span></div>
+        <div class="status-chip"><span>RideEscrow</span><span>${contractsAddr.escrow.slice(0,8)}...</span></div>
+        <div class="status-chip"><span>NFT ➜ Gov</span><span class="${ok1?'ok':'bad'}">${ok1?'✅ OK':'❌'}</span></div>
+        <div class="status-chip"><span>Gov ➜ NFT</span><span class="${ok2?'ok':'bad'}">${ok2?'✅ OK':'❌'}</span></div>
+        <div class="status-chip"><span>Escrow ➜ Gov</span><span class="${ok3?'ok':'bad'}">${ok3?'✅ OK':'❌'}</span></div>
+        <div class="status-chip"><span>Cancelamento.sol</span><span>${hasCancel ? '✅ configurado' : '❌ não configurado'}</span></div>
+        <div class="status-chip"><span>Oracle Chainlink</span><span>${ethPriceUSD>0 ? `ETH R$ ${(ethPriceUSD*BRL_RATE).toFixed(2)}` : 'Carregando...'}</span></div>
+        <div class="status-chip"><span>OSRM (OpenStreetMap)</span><span class="ok">✅ Gratuito — sem API key</span></div>
+      `;
+      document.getElementById("contractNotes").innerHTML = ok1 && ok2 && ok3 ? "✅ Todos os contratos alinhados." : "⚠️ Algumas permissões entre contratos estão faltando.";
+    }
+
+    async function refreshAll(){
+      if(!provider || !userAddress) return;
+      await loadEthPrice();
+      await fetchApprovedDrivers();
+      await loadUserRides();
+      await loadPendingWithdraw();
+      await loadContractStatus();
+      const bal = await provider.getBalance(userAddress);
+      document.getElementById("ethBalance").innerText = Number(ethers.formatEther(bal)).toFixed(4);
+      document.getElementById("walletBal").innerText = Number(ethers.formatEther(bal)).toFixed(4)+" ETH";
+    }
+
+    // Inicialização
+    window.onload = async () => {
+      initMap();
+      const ok = await connectWallet();
+      if(!ok) return;
+      await refreshAll();
+      document.getElementById("calcRouteBtn").onclick = calculateOSRM;
+      document.getElementById("createRideBtn").onclick = createRideOnChain;
+      document.getElementById("refreshBtn").onclick = refreshAll;
+      document.getElementById("withdrawBtn").onclick = withdrawFunds;
+      window.cancelBeforeStart = cancelBeforeStart;
+      window.startRide = startRide;
+      window.confirmCompletion = confirmCompletion;
+      window.cancelAfterStartGPS = cancelAfterStartGPS;
+    };
+  })();
+</script>
+</body>
+</html>
