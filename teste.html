@@ -133,7 +133,7 @@
         <div class="fg"><label>ViaChainGovernance</label><input id="agov" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>RideEscrow</label><input id="aesc" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>Cancelamento.sol</label><input id="acancel" spellcheck="false" placeholder="0x..."/></div>
-        <!-- CAMPO Rota.sol -->
+        <!-- ✅ NOVO: campo Rota.sol -->
         <div class="fg"><label>Rota.sol</label><input id="arota" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>Chainlink Subscription ID</label><input id="asubid" type="number" placeholder="Ex: 1234"/></div>
       </div>
@@ -480,8 +480,8 @@ async function conectar(){
     document.getElementById("agov").value=saved.gov||"";
     document.getElementById("aesc").value=saved.esc||"";
     document.getElementById("acancel").value=saved.cancel||"";
-    document.getElementById("arota").value=saved.rota||""; // restaura Rota.sol salvo
-    document.getElementById("asubid").value=saved.subid||""; // restaura Subscription ID salvo
+    document.getElementById("arota").value=saved.rota||""; // ✅ restaura Rota.sol salvo
+    document.getElementById("asubid").value=saved.subid||""; // ✅ restaura Subscription ID salvo
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
   }catch(e){
@@ -490,16 +490,6 @@ async function conectar(){
   }
 }
 
-/* ── ABI ROTA ATUALIZADA ── */
-const AROTA=[
-  "function subscriptionId() view returns (uint64)",
-  "function setSubscriptionId(uint64) external",
-  "function rideEscrow() view returns (address)",
-  "function setRideEscrow(address) external",
-  "function setCancelamento(address) external"
-];
-
-/* ── LIGAR CONTRATOS (CORRIGIDO) ── */
 async function ligarContratos(){
   const eb=document.getElementById("errbox");
   eb.style.display="none";
@@ -528,6 +518,7 @@ async function ligarContratos(){
       const cancelChecked=ethers.getAddress(cancelAddr);
       CC=new ethers.Contract(cancelChecked,ACANCEL,SG);
       AD.cancel=cancelChecked;
+      // Verifica se setCancelamento() ja foi chamado no RideEscrow
       const cancelAtual=await sc(()=>CE.cancelamento(),ethers.ZeroAddress);
       if(cancelAtual.toLowerCase()!==cancelChecked.toLowerCase()){
         lg("Chamando setCancelamento() no RideEscrow...","p");
@@ -548,16 +539,21 @@ async function ligarContratos(){
       lg("Cancelamento.sol nao configurado","p");
     }
 
-    // ── Rota.sol (COM AUTORIZAÇÃO ADICIONAL) ──
+    // ── ✅ Rota.sol — conecta e chama setRota() e setSubscriptionId() se necessario ──
     const rotaAddr=document.getElementById("arota").value.trim();
     const subId=document.getElementById("asubid").value.trim();
     if(rotaAddr&&ethers.isAddress(rotaAddr)){
       const rotaChecked=ethers.getAddress(rotaAddr);
       AD.rota=rotaChecked;
 
+      // ABI minima do Rota.sol
+      const AROTA=[
+        "function subscriptionId() view returns (uint64)",
+        "function setSubscriptionId(uint64) external"
+      ];
       const CR=new ethers.Contract(rotaChecked,AROTA,SG);
 
-      // 1. Configurar Rota no RideEscrow
+      // Verifica se setRota() ja foi chamado com esse endereco
       const rotaAtual=await sc(()=>CE.rota(),ethers.ZeroAddress);
       if(rotaAtual.toLowerCase()!==rotaChecked.toLowerCase()){
         lg("Chamando setRota() no RideEscrow...","p");
@@ -575,23 +571,7 @@ async function ligarContratos(){
         lg("Rota.sol ja configurado no contrato","s");
       }
 
-      // 2. 🔥 CORREÇÃO: Autorizar RideEscrow dentro do Rota.sol
-      try {
-        const escNoRota = await sc(() => CR.rideEscrow(), ethers.ZeroAddress);
-        if (escNoRota.toLowerCase() !== AD.esc.toLowerCase()) {
-          lg("Autorizando RideEscrow dentro do Rota.sol...", "p");
-          tt("Aguardando MetaMask", "Confirme setRideEscrow() no Rota.sol.", "p");
-          const txAuth = await CR.setRideEscrow(AD.esc);
-          await txAuth.wait();
-          lg("Rota.sol agora reconhece o RideEscrow!", "s");
-          tt("Autorização concluída", "Rota.sol ↔ RideEscrow sincronizados.", "s");
-        }
-      } catch (e) {
-        console.warn("Erro ao tentar setRideEscrow (pode já estar configurado):", e);
-        lg("Aviso: setRideEscrow não foi chamado (pode já estar ok)", "p");
-      }
-
-      // 3. Subscription ID
+      // ✅ Verifica e atualiza subscriptionId se necessario
       if(subId&&Number(subId)>0){
         AD.subid=subId;
         try{
@@ -618,7 +598,7 @@ async function ligarContratos(){
       lg("Rota.sol nao informado — confirmar destino indisponivel","p");
     }
 
-    // Salva endereços
+    // Salva todos os enderecos incluindo rota e subid
     ss({...AD});
 
     await carregarPrecoETH();
@@ -832,7 +812,7 @@ function quote(){
 function rc(r,btns){
   const chip=RC[r.st]||"cbl";
   const usd=ethUSD>0?"R$ "+(Number(ethers.formatEther(r.qw))*ethUSD*BRL_RATE).toFixed(2):"";
-  return`<div class="rc"><div class="rm">
+  return`<div class="rc" data-ride-id="${r.id}"><div class="rm">
     <div class="rid">#${r.id} · ${H(fd(r.cAt))}</div>
     <div class="rro">${H(r.or)} → ${H(r.de)}</div>
     <div class="rd">
@@ -1090,14 +1070,91 @@ async function cancelarAposInicio(rideId, latDe, lonDe){
     lg("Erro GPS/cancelamento: "+fe2(e),"e");
   }
 }
-async function iniciarCorrida(id){await tx("Iniciando #"+id,()=>CE.startRide(id),"Iniciada #"+id,"ID "+id)}
-async function confirmarDestino(id){
+/* ── TAXÍMETRO ── */
+let taximetro = {
+  rideId: null,
+  watchId: null,
+  kmTotal: 0,
+  ultimoPonto: null,
+  intervalo: null
+};
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1 * Math.PI/180) *
+            Math.cos(lat2 * Math.PI/180) *
+            Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function iniciarTaximetro(rideId) {
+  taximetro.rideId  = rideId;
+  taximetro.kmTotal = 0;
+  taximetro.ultimoPonto = null;
+
+  taximetro.watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      if (taximetro.ultimoPonto) {
+        const dist = haversine(
+          taximetro.ultimoPonto.lat,
+          taximetro.ultimoPonto.lon,
+          lat, lon
+        );
+        // Ignora saltos absurdos (GPS instavel)
+        if (dist < 0.5) taximetro.kmTotal += dist;
+      }
+      taximetro.ultimoPonto = { lat, lon };
+      atualizarTaximetroUI();
+    },
+    (err) => lg("GPS erro: " + err.message, "e"),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
+  lg("Taximetro iniciado para corrida #" + rideId, "s");
+}
+
+function pararTaximetro() {
+  if (taximetro.watchId !== null) {
+    navigator.geolocation.clearWatch(taximetro.watchId);
+    taximetro.watchId = null;
+  }
+  lg("Taximetro parado — " + taximetro.kmTotal.toFixed(2) + " km percorridos", "s");
+}
+
+function atualizarTaximetroUI() {
+  const km = taximetro.kmTotal.toFixed(2);
+  // Atualiza o chip de km na corrida ativa
+  document.querySelectorAll(".chip.cpu").forEach(el => {
+    if (el.closest("[data-ride-id='" + taximetro.rideId + "']")) {
+      el.textContent = km + " km";
+    }
+  });
+  lg("Taximetro: " + km + " km", "i");
+}
+
+async function iniciarCorrida(id) {
+  await tx("Iniciando #"+id, ()=>CE.startRide(id), "Iniciada #"+id, "ID "+id);
+  // Inicia taximetro apos confirmar transacao
+  iniciarTaximetro(id);
+}
+
+async function confirmarDestino(id) {
+  // Para o taximetro e pega km total percorrido
+  pararTaximetro();
+  const kmPercorrido = Math.round(taximetro.kmTotal);
+  lg("Distancia percorrida: " + taximetro.kmTotal.toFixed(2) + " km → enviando " + kmPercorrido + " km ao contrato", "s");
+  tt("Taximetro", taximetro.kmTotal.toFixed(2) + " km percorridos", "s");
+
   await tx(
     "Confirmando destino #"+id,
     ()=>CE.confirmDestinationReached(id),
     "Destino confirmado #"+id,
-    "Chainlink OSRM calculando distancia real..."
-  )
+    "Processando pagamento proporcional..."
+  );
 }
 async function concluirCorrida(id){await tx("Concluindo #"+id,()=>CE.confirmRideCompletion(id),"Concluida #"+id,"ID "+id)}
 async function timeout(id){await tx("Timeout #"+id,()=>CE.finalizeAfterTimeout(id),"Timeout #"+id,"ID "+id)}
@@ -1111,3 +1168,4 @@ function tab(n){
 </script>
 </body>
 </html>
+tml>
