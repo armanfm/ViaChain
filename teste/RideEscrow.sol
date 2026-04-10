@@ -4,25 +4,14 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts@4.9.3/access/Ownable.sol";
 import "@openzeppelin/contracts@4.9.3/security/ReentrancyGuard.sol";
 
-// ─────────────────────────────────────────────────────────────────
-// Interface com ViaChainGovernance
-// ─────────────────────────────────────────────────────────────────
 interface IGovernance {
     function isApprovedDriver(address driver) external view returns (bool);
     function getDriverPrice(address driver) external view returns (uint256);
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Interface com Rota.sol — Chainlink Functions + OSRM
-// ─────────────────────────────────────────────────────────────────
+// Rota.sol — Chainlink Functions valida km percorrido
 interface IRota {
-    function calcularDistancia(
-        string calldata lat1,
-        string calldata lon1,
-        string calldata lat2,
-        string calldata lon2,
-        uint256 rideId
-    ) external returns (bytes32 requestId);
+    function validarKm(uint256 rideId, uint256 kmPercorrido) external returns (bytes32 requestId);
 }
 
 contract RideEscrow is ReentrancyGuard, Ownable {
@@ -33,10 +22,9 @@ contract RideEscrow is ReentrancyGuard, Ownable {
     uint256 public constant PASSENGER_CONFIRMATION_TIMEOUT = 5 minutes;
 
     address public systemOperator;
-    address public cancelamento; // Cancelamento.sol
-    address public rota;         // Rota.sol
+    address public cancelamento;
+    address public rota;
 
-    // ── Pull Payment ──────────────────────────────────────────────
     mapping(address => uint256) public pendingWithdrawals;
 
     enum RideStatus {
@@ -55,15 +43,10 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         address passenger;
         address driver;
         uint256 quotedPriceWei;
-
-        // Coordenadas gravadas on-chain no createRide()
-        // Usadas pelo Rota.sol no cancelamento e confirmação
-        // Calculadas pelo OSRM antes do createRide() — sem Nominatim on-chain
         string latOrigem;
         string lonOrigem;
         string latDestino;
         string lonDestino;
-
         uint256 createdAt;
         uint256 acceptedAt;
         uint256 startedAt;
@@ -74,78 +57,24 @@ contract RideEscrow is ReentrancyGuard, Ownable {
 
     mapping(uint256 => Ride) public rides;
 
-    // ── Eventos ───────────────────────────────────────────────────
     event SystemOperatorUpdated(address indexed old, address indexed novo);
     event CancelamentoUpdated(address indexed old, address indexed novo);
     event RotaUpdated(address indexed old, address indexed novo);
     event WithdrawalQueued(address indexed recipient, uint256 amount);
     event Withdrawn(address indexed recipient, uint256 amount);
+    event RideCreated(uint256 indexed rideId, address indexed passenger, address indexed driver, uint256 quotedPriceWei, uint256 createdAt);
+    event RideAccepted(uint256 indexed rideId, address indexed driver, uint256 acceptedAt);
+    event RideRejected(uint256 indexed rideId, address indexed driver, uint256 refundedAmountWei, uint256 rejectedAt);
+    event RideStarted(uint256 indexed rideId, address indexed passenger, uint256 startedAt);
+    event DestinationConfirmedByDriver(uint256 indexed rideId, address indexed driver, uint256 kmPercorrido, uint256 confirmedAt);
+    event RideCompleted(uint256 indexed rideId, address indexed passenger, address indexed driver, uint256 paidToDriverWei, uint256 completedAt);
+    event RideCompletedByTimeout(uint256 indexed rideId, address indexed executor, address indexed driver, uint256 paidToDriverWei, uint256 completedAt);
+    event RideCancelledBeforeStart(uint256 indexed rideId, address indexed cancelledBy, uint256 refundedToPassengerWei, uint256 cancelledAt);
+    event RideMarcadaCancelada(uint256 indexed rideId, uint256 cancelledAt);
+    event PagamentoProporcionalDistribuido(uint256 indexed rideId, uint256 distanciaKm, uint256 paidToDriverWei, uint256 refundedToPassengerWei);
 
-    event RideCreated(
-        uint256 indexed rideId,
-        address indexed passenger,
-        address indexed driver,
-        uint256 quotedPriceWei,
-        uint256 createdAt
-    );
-    event RideAccepted(
-        uint256 indexed rideId,
-        address indexed driver,
-        uint256 acceptedAt
-    );
-    event RideRejected(
-        uint256 indexed rideId,
-        address indexed driver,
-        uint256 refundedAmountWei,
-        uint256 rejectedAt
-    );
-    event RideStarted(
-        uint256 indexed rideId,
-        address indexed passenger,
-        uint256 startedAt
-    );
-    event DestinationConfirmedByDriver(
-        uint256 indexed rideId,
-        address indexed driver,
-        uint256 confirmedAt
-    );
-    event RideCompleted(
-        uint256 indexed rideId,
-        address indexed passenger,
-        address indexed driver,
-        uint256 paidToDriverWei,
-        uint256 completedAt
-    );
-    event RideCompletedByTimeout(
-        uint256 indexed rideId,
-        address indexed executor,
-        address indexed driver,
-        uint256 paidToDriverWei,
-        uint256 completedAt
-    );
-    event RideCancelledBeforeStart(
-        uint256 indexed rideId,
-        address indexed cancelledBy,
-        uint256 refundedToPassengerWei,
-        uint256 cancelledAt
-    );
-    event RideMarcadaCancelada(
-        uint256 indexed rideId,
-        uint256 cancelledAt
-    );
-    event PagamentoProporcionalDistribuido(
-        uint256 indexed rideId,
-        uint256 distanciaKm,
-        uint256 paidToDriverWei,
-        uint256 refundedToPassengerWei
-    );
-
-    // ── Modifiers ─────────────────────────────────────────────────
     modifier onlySystemOperator() {
-        require(
-            msg.sender == systemOperator || msg.sender == owner(),
-            "Not system operator"
-        );
+        require(msg.sender == systemOperator || msg.sender == owner(), "Not system operator");
         _;
     }
 
@@ -159,13 +88,10 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         _;
     }
 
-    // ── Constructor ───────────────────────────────────────────────
     constructor(address governanceAddress) {
         require(governanceAddress != address(0), "Invalid governance");
         governance = IGovernance(governanceAddress);
     }
-
-    // ── Admin ─────────────────────────────────────────────────────
 
     function setSystemOperator(address novo) external onlyOwner {
         require(novo != address(0), "Invalid operator");
@@ -188,8 +114,6 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         emit RotaUpdated(old, _rota);
     }
 
-    // ── Pull Payment ──────────────────────────────────────────────
-
     function _queue(address recipient, uint256 amount) internal {
         pendingWithdrawals[recipient] += amount;
         emit WithdrawalQueued(recipient, amount);
@@ -198,20 +122,13 @@ contract RideEscrow is ReentrancyGuard, Ownable {
     function withdraw() external nonReentrant {
         uint256 amount = pendingWithdrawals[msg.sender];
         require(amount > 0, "Nothing to withdraw");
-
-        pendingWithdrawals[msg.sender] = 0; // CEI
-
+        pendingWithdrawals[msg.sender] = 0;
         (bool ok, ) = payable(msg.sender).call{value: amount}("");
         require(ok, "Withdraw failed");
-
         emit Withdrawn(msg.sender, amount);
     }
 
-    // ── Fluxo da corrida ──────────────────────────────────────────
-
-    // Frontend calcula lat/lon via OSRM antes de chamar
-    // Coordenadas gravadas on-chain — usadas no cancelamento e confirmação
-    // Sem Nominatim on-chain — sem rate limit
+    // OSRM calcula rota estimada no frontend — passageiro faz stake
     function createRide(
         address driver,
         string calldata latOrigem,
@@ -250,44 +167,32 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         return rideCounter;
     }
 
-    // Motorista aceita a corrida
     function acceptRide(uint256 rideId) external {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(msg.sender == ride.driver, "Only driver can accept");
         require(governance.isApprovedDriver(msg.sender), "Driver not approved");
         require(ride.status == RideStatus.CREATED, "Invalid ride state");
-
         ride.status     = RideStatus.ACCEPTED;
         ride.acceptedAt = block.timestamp;
-
         emit RideAccepted(rideId, msg.sender, block.timestamp);
     }
 
-    // Motorista rejeita — ETH volta integralmente ao passageiro
-    // Não saiu do lugar — sem percurso a calcular
     function rejectRide(uint256 rideId) external nonReentrant {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(msg.sender == ride.driver, "Only driver can reject");
         require(ride.status == RideStatus.CREATED, "Invalid ride state");
-
         uint256 amount      = ride.quotedPriceWei;
         ride.status         = RideStatus.DRIVER_REJECTED;
         ride.quotedPriceWei = 0;
-
         _queue(ride.passenger, amount);
-
         emit RideRejected(rideId, msg.sender, amount, block.timestamp);
     }
 
-    // Cancelamento ANTES do início — ETH volta integralmente ao passageiro
-    // Motorista não saiu do lugar — sem percurso a calcular
+    // Cancelamento ANTES do inicio — 100% volta ao passageiro
     function cancelBeforeStart(uint256 rideId) external nonReentrant {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(msg.sender == ride.passenger, "Only passenger can cancel");
         require(
@@ -295,150 +200,83 @@ contract RideEscrow is ReentrancyGuard, Ownable {
             ride.status == RideStatus.ACCEPTED,
             "Ride already started"
         );
-
         uint256 amount      = ride.quotedPriceWei;
         ride.status         = RideStatus.CANCELLED;
         ride.quotedPriceWei = 0;
-
         _queue(ride.passenger, amount);
-
         emit RideCancelledBeforeStart(rideId, msg.sender, amount, block.timestamp);
     }
 
-    // Passageiro confirma embarque — corrida iniciada
-    // A partir daqui qualquer cancelamento aciona o Rota.sol
+    // Passageiro confirma embarque — taximetro inicia no frontend
     function startRide(uint256 rideId) external {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(msg.sender == ride.passenger, "Only passenger can start");
         require(ride.status == RideStatus.ACCEPTED, "Ride not accepted");
-
         ride.status    = RideStatus.STARTED;
         ride.startedAt = block.timestamp;
-
         emit RideStarted(rideId, msg.sender, block.timestamp);
     }
 
-    // Motorista confirma chegada ao destino
-    // Aciona Rota.sol — OSRM valida km reais percorridos
-    // Coordenadas já estão gravadas on-chain desde o createRide()
-    function confirmDestinationReached(uint256 rideId) external {
+    // Motorista confirma destino
+    // Frontend envia km percorrido calculado pelo taximetro (Haversine + GPS)
+    // Chainlink valida o km e chama receberResultadoRota()
+    function confirmDestinationReached(
+        uint256 rideId,
+        uint256 kmPercorrido  // km real calculado pelo taximetro no frontend
+    ) external {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(msg.sender == ride.driver, "Only driver can confirm");
         require(ride.status == RideStatus.STARTED, "Ride not started");
+        require(kmPercorrido > 0, "Invalid km");
 
         ride.status                       = RideStatus.DRIVER_CONFIRMED_DESTINATION;
         ride.driverConfirmedDestinationAt = block.timestamp;
 
-        // Aciona Rota.sol com coordenadas gravadas on-chain
-        // OSRM calcula distância real origem → destino
-        // Resultado volta via receberResultadoRota()
-        IRota(rota).calcularDistancia(
-            ride.latOrigem,
-            ride.lonOrigem,
-            ride.latDestino,
-            ride.lonDestino,
-            rideId
-        );
+        // Chainlink valida o km percorrido enviado pelo frontend
+        IRota(rota).validarKm(rideId, kmPercorrido);
 
-        emit DestinationConfirmedByDriver(rideId, msg.sender, block.timestamp);
+        emit DestinationConfirmedByDriver(rideId, msg.sender, kmPercorrido, block.timestamp);
     }
 
-    // Passageiro confirma chegada — motorista recebe via Pull Payment
-    // receberResultadoRota() já calculou o valor proporcional
-    function confirmRideCompletion(uint256 rideId) external nonReentrant {
-        Ride storage ride = rides[rideId];
-
-        require(ride.id != 0, "Ride does not exist");
-        require(msg.sender == ride.passenger, "Only passenger can confirm");
-        require(
-            ride.status == RideStatus.COMPLETED,
-            "Ride not completed by oracle yet"
-        );
-
-        // Pagamento já foi distribuído pelo receberResultadoRota()
-        // Passageiro só confirma — saca via withdraw()
-        emit RideCompleted(
-            rideId,
-            ride.passenger,
-            ride.driver,
-            ride.quotedPriceWei,
-            block.timestamp
-        );
-    }
-
-    // Timeout — passageiro não confirmou em 5 minutos
-    // Motorista recebe tudo via Pull Payment
+    // Timeout — motorista recebe tudo
     function finalizeAfterTimeout(uint256 rideId) external nonReentrant {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
-        require(
-            ride.status == RideStatus.DRIVER_CONFIRMED_DESTINATION,
-            "Timeout not available"
-        );
+        require(ride.status == RideStatus.DRIVER_CONFIRMED_DESTINATION, "Timeout not available");
         require(
             block.timestamp >= ride.driverConfirmedDestinationAt + PASSENGER_CONFIRMATION_TIMEOUT,
             "Timeout not reached"
         );
-
         uint256 amount      = ride.quotedPriceWei;
         ride.status         = RideStatus.COMPLETED;
         ride.completedAt    = block.timestamp;
         ride.quotedPriceWei = 0;
-
         _queue(ride.driver, amount);
-
         emit RideCompletedByTimeout(rideId, msg.sender, ride.driver, amount, block.timestamp);
     }
 
-    // ─────────────────────────────────────────────────────────────
     // Chamado pelo Cancelamento.sol
-    // Marca corrida como CANCELLED para o Rota.sol distribuir
-    // Coordenadas já estão on-chain — Cancelamento.sol as lê daqui
-    // ─────────────────────────────────────────────────────────────
     function marcarCancelado(uint256 rideId) external onlyCancelamento {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(
             ride.status == RideStatus.STARTED ||
             ride.status == RideStatus.DRIVER_CONFIRMED_DESTINATION,
             "Ride not eligible"
         );
-
         ride.status      = RideStatus.CANCELLED;
         ride.completedAt = block.timestamp;
-
         emit RideMarcadaCancelada(rideId, block.timestamp);
     }
 
-    // Retorna coordenadas gravadas on-chain
-    // Usado pelo Cancelamento.sol para passar ao Rota.sol
-    function getRideCoords(uint256 rideId) external view returns (
-        string memory latOrigem,
-        string memory lonOrigem,
-        string memory latDestino,
-        string memory lonDestino
-    ) {
-        Ride storage ride = rides[rideId];
-        require(ride.id != 0, "Ride does not exist");
-        return (ride.latOrigem, ride.lonOrigem, ride.latDestino, ride.lonDestino);
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // Callback do Rota.sol — chamado automaticamente pelo Chainlink
-    // Recebe km reais e distribui pagamento proporcional
-    // ─────────────────────────────────────────────────────────────
+    // Callback do Rota.sol — Chainlink validou o km e distribui proporcional
     function receberResultadoRota(
         uint256 rideId,
         uint256 distanciaKm
     ) external nonReentrant onlyRota {
         Ride storage ride = rides[rideId];
-
         require(ride.id != 0, "Ride does not exist");
         require(
             ride.status == RideStatus.CANCELLED ||
@@ -450,38 +288,40 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         uint256 pricePerKm   = governance.getDriverPrice(ride.driver);
         uint256 driverAmount = distanciaKm * pricePerKm;
 
-        // Nunca paga mais do que o escrow
         if (driverAmount > ride.quotedPriceWei) {
             driverAmount = ride.quotedPriceWei;
         }
 
         uint256 passengerAmount = ride.quotedPriceWei - driverAmount;
 
-        // CEI — zera escrow antes de distribuir
         ride.quotedPriceWei = 0;
         ride.status         = RideStatus.COMPLETED;
         ride.completedAt    = block.timestamp;
 
-        // Pull Payment — cada um saca individualmente
         if (driverAmount    > 0) _queue(ride.driver,    driverAmount);
         if (passengerAmount > 0) _queue(ride.passenger, passengerAmount);
 
-        emit PagamentoProporcionalDistribuido(
-            rideId,
-            distanciaKm,
-            driverAmount,
-            passengerAmount
-        );
+        emit PagamentoProporcionalDistribuido(rideId, distanciaKm, driverAmount, passengerAmount);
     }
-
-    // ── Views ─────────────────────────────────────────────────────
 
     function getRide(uint256 rideId) external view returns (Ride memory) {
         require(rides[rideId].id != 0, "Ride does not exist");
         return rides[rideId];
     }
 
+    function getRideCoords(uint256 rideId) external view returns (
+        string memory latOrigem,
+        string memory lonOrigem,
+        string memory latDestino,
+        string memory lonDestino
+    ) {
+        Ride storage ride = rides[rideId];
+        require(ride.id != 0, "Ride does not exist");
+        return (ride.latOrigem, ride.lonOrigem, ride.latDestino, ride.lonDestino);
+    }
+
     function getPendingWithdrawal(address account) external view returns (uint256) {
         return pendingWithdrawals[account];
     }
 }
+
