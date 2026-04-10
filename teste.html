@@ -442,14 +442,17 @@ async function calcularOSRM(){
   status.style.display="block";
   status.textContent="⏳ Calculando rota via OSRM + OpenStreetMap...";
   try{
+    // Photon — geocoding rapido baseado em OpenStreetMap
     const [r1,r2]=await Promise.all([
-      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(or)}&format=json&limit=1`).then(r=>r.json()),
-      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(de)}&format=json&limit=1`).then(r=>r.json()),
+      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(or)}&limit=1&lang=pt`).then(r=>r.json()),
+      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(de)}&limit=1&lang=pt`).then(r=>r.json()),
     ]);
-    if(!r1.length) throw new Error("Origem nao encontrada.");
-    if(!r2.length) throw new Error("Destino nao encontrado.");
-    const lat1=parseFloat(r1[0].lat).toFixed(6), lon1=parseFloat(r1[0].lon).toFixed(6);
-    const lat2=parseFloat(r2[0].lat).toFixed(6), lon2=parseFloat(r2[0].lon).toFixed(6);
+    if(!r1.features?.length) throw new Error("Origem nao encontrada.");
+    if(!r2.features?.length) throw new Error("Destino nao encontrado.");
+    const [lon1f,lat1f]=r1.features[0].geometry.coordinates;
+    const [lon2f,lat2f]=r2.features[0].geometry.coordinates;
+    const lat1=lat1f.toFixed(6), lon1=lon1f.toFixed(6);
+    const lat2=lat2f.toFixed(6), lon2=lon2f.toFixed(6);
     const osrm=await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`).then(r=>r.json());
     if(osrm.code!=="Ok") throw new Error("OSRM nao encontrou rota.");
     const km=(osrm.routes[0].distance/1000).toFixed(2);
