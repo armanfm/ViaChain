@@ -148,5 +148,4 @@ Este projeto é um **MVP (Minimum Viable Product)** com:
 |---|---|---|
 | DriverNFT | 0x3Ed71Ca9E9cbC0f51570c863fEaC1538ad513DcF | [Ver no Etherscan](https://sepolia.etherscan.io/address/0x3Ed71Ca9E9cbC0f51570c863fEaC1538ad513DcF) |
 | ViaChainGovernance | 0x99bfD8B22cd9bf14BC6C31B1a05A700B5DCf66c6 | [Ver no Etherscan](https://sepolia.etherscan.io/address/0x99bfD8B22cd9bf14BC6C31B1a05A700B5DCf66c6) |
-| RideEscrow | 0xB73Ab93ee9aa9730f08045DaaE6b9B9dD241508a | [Ver no Etherscan](https://sepolia.etherscan.io/address/0xB73Ab93ee9aa9730f08045DaaE6b9B9dD241508a) |
 | PriceOracle | 0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07 | [Ver no Etherscan](https://sepolia.etherscan.io/address/0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07) |
