@@ -99,7 +99,6 @@
     .saque-box{background:rgba(34,197,94,.07);border:1px solid var(--green);border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
     .saque-val{color:var(--green);font-weight:700;font-size:1rem}
     .osrm-loading{color:var(--yellow);font-size:.8rem;margin-top:4px}
-    .taximetro-box{background:rgba(79,142,247,.07);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;font-size:.85rem;margin-top:8px;display:none}
     @keyframes si{from{opacity:0;transform:translateX(28px)}to{opacity:1}}
     @media(max-width:700px){#app{padding:14px 12px 78px}.rc,.ac{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.ra,.aa{flex-direction:column;align-items:stretch}.tabs{width:100%}}
   </style>
@@ -133,6 +132,9 @@
         <div class="fg"><label>DriverNFT</label><input id="anft" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>ViaChainGovernance</label><input id="agov" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>RideEscrow</label><input id="aesc" spellcheck="false" placeholder="0x..."/></div>
+        <div class="fg"><label>Cancelamento.sol</label><input id="acancel" spellcheck="false" placeholder="0x..."/></div>
+        <div class="fg"><label>Rota.sol</label><input id="arota" spellcheck="false" placeholder="0x..."/></div>
+        <div class="fg"><label>Chainlink Subscription ID</label><input id="asubid" type="number" placeholder="Ex: 1234"/></div>
       </div>
       <div id="errbox"></div>
       <button class="btn bp" onclick="ligarContratos()">Entrar no app</button>
@@ -147,7 +149,6 @@
       <div class="notice" id="cnote"></div>
     </div>
 
-    <!-- SALDO PARA SACAR -->
     <div id="saque-section" style="display:none" class="sec">
       <div class="sect">💰 Saldo disponivel para saque</div>
       <div class="secs">Seu ETH esta disponivel para saque. Clique para receber na sua carteira.</div>
@@ -223,10 +224,6 @@
         </div>
         <div class="notice" id="meuPerfil">Carregando...</div>
       </div>
-      <!-- Taximetro visivel ao motorista durante corrida -->
-      <div id="taximetro-section" class="taximetro-box">
-        🚕 <b>Taximetro:</b> <span id="taximetro-km">0.00</span> km percorridos
-      </div>
       <div class="sec"><div class="sect">📥 Corridas para mim</div><div id="mpend" class="rl"><div class="empty"><div class="ei">📨</div>Nenhuma.</div></div></div>
       <div class="sec"><div class="sect">▶️ Em andamento</div><div id="mativo" class="rl"><div class="empty"><div class="ei">🚦</div>Nenhuma.</div></div></div>
     </div>
@@ -257,63 +254,40 @@
 <script>
 "use strict";
 
-/* ── STORAGE ── */
-const SK="vc_addrs7", RM="vc_rides7";
+const SK="vc_addrs6", RM="vc_rides6";
 const sv=()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch{return{}}};
 const ss=o=>localStorage.setItem(SK,JSON.stringify(o));
 const rm=()=>{try{return JSON.parse(localStorage.getItem(RM)||"{}")}catch{return{}}};
 const sm=(id,d)=>{const s=rm();s[String(id)]=d;localStorage.setItem(RM,JSON.stringify(s))};
 const gm=id=>rm()[String(id)]||null;
 
-/* ── ABIS ── */
-const ANFT=[
-  "function owner() view returns (address)",
-  "function governance() view returns (address)",
-  "function setGovernance(address) external",
-  "function hasActiveNFT(address) view returns (bool)",
-  "function mintDriverNFT(address,string) external returns (uint256)",
-  "function revokeDriverNFT(address) external"
-];
-const AGOV=[
-  "function owner() view returns (address)",
-  "function driverNFT() view returns (address)",
-  "function requestDriverRegistration(string,string,string) external",
-  "function approveDriver(address,uint8) external",
-  "function rejectDriver(address) external",
-  "function revokeDriver(address) external",
-  "function setMyPricePerKm(uint256) external",
-  "function isApprovedDriver(address) view returns (bool)",
-  "function getDriverCategory(address) view returns (uint8)",
-  "function getDriverPrice(address) view returns (uint256)",
-  "function getDriverProfile(address) view returns (address,string,string,string,uint256,uint8,uint8,uint256)",
-  "event DriverRequested(address indexed driver)",
-  "event DriverApproved(address indexed driver, uint8 category)",
-  "event DriverRejected(address indexed driver)",
-  "event DriverRevoked(address indexed driver)",
-  "event DriverPriceUpdated(address indexed driver, uint256 newPrice)"
-];
+const ANFT=["function owner() view returns (address)","function governance() view returns (address)","function setGovernance(address) external","function hasActiveNFT(address) view returns (bool)","function mintDriverNFT(address,string) external returns (uint256)","function revokeDriverNFT(address) external"];
+const AGOV=["function owner() view returns (address)","function driverNFT() view returns (address)","function requestDriverRegistration(string,string,string) external","function approveDriver(address,uint8) external","function rejectDriver(address) external","function revokeDriver(address) external","function setMyPricePerKm(uint256) external","function isApprovedDriver(address) view returns (bool)","function getDriverCategory(address) view returns (uint8)","function getDriverPrice(address) view returns (uint256)","function getDriverProfile(address) view returns (address,string,string,string,uint256,uint8,uint8,uint256)","event DriverRequested(address indexed driver)","event DriverApproved(address indexed driver, uint8 category)","event DriverRejected(address indexed driver)","event DriverRevoked(address indexed driver)","event DriverPriceUpdated(address indexed driver, uint256 newPrice)"];
 
-// ── ABI atualizada para novo RideEscrow ──
+// ✅ ABI atualizada — confirmDestinationReached e confirmRideCompletion recebem kmPercorrido
+// ✅ cancelAfterStart direto no RideEscrow com kmPercorrido
 const AESC=[
   "function owner() view returns (address)",
   "function governance() view returns (address)",
   "function systemOperator() view returns (address)",
+  "function cancelamento() view returns (address)",
+  "function rota() view returns (address)",
   "function rideCounter() view returns (uint256)",
   "function setSystemOperator(address) external",
+  "function setCancelamento(address) external",
+  "function setRota(address) external",
   "function createRide(address,string,string,string,string) payable returns (uint256)",
   "function acceptRide(uint256) external",
   "function rejectRide(uint256) external",
   "function cancelBeforeStart(uint256) external",
   "function startRide(uint256) external",
-  // ✅ confirmDestinationReached agora recebe kmPercorrido
   "function confirmDestinationReached(uint256,uint256) external",
-  // ✅ confirmRideCompletion agora recebe kmPercorrido
   "function confirmRideCompletion(uint256,uint256) external",
-  // ✅ cancelAfterStart agora e direto no RideEscrow com kmPercorrido
   "function cancelAfterStart(uint256,uint256) external",
+  "function finalizeAfterTimeout(uint256) external",
   "function withdraw() external",
+  "function getPendingWithdrawal(address) view returns (uint256)",
   "function pendingWithdrawals(address) view returns (uint256)",
-  // ✅ getRide atualizado — sem driverConfirmedDestinationAt
   "function getRide(uint256) view returns (tuple(uint256 id,address passenger,address driver,uint256 quotedPriceWei,string latOrigem,string lonOrigem,string latDestino,string lonDestino,uint256 createdAt,uint256 acceptedAt,uint256 startedAt,uint256 completedAt,uint8 status))",
   "function getRideCoords(uint256) view returns (string,string,string,string)",
   "event RideCreated(uint256 indexed rideId,address indexed passenger,address indexed driver,uint256 quotedPriceWei,uint256 createdAt)",
@@ -323,69 +297,51 @@ const AESC=[
 
 const AORACLE=["function getETHPrice() view returns (int256)"];
 const ORACLE_ADDR="0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07";
-let CO=null, ethUSD=0;
+let CO=null,ethUSD=0;
 const BRL_RATE=5.85;
 
-/* ── OSRM ── */
 let osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};
 
-/* ── TAXIMETRO ── */
+// ── TAXIMETRO ──
 let taximetro={rideId:null,watchId:null,kmTotal:0,ultimoPonto:null};
 
 function haversine(lat1,lon1,lat2,lon2){
-  const R=6371;
-  const dLat=(lat2-lat1)*Math.PI/180;
-  const dLon=(lon2-lon1)*Math.PI/180;
+  const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
   const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
 function iniciarTaximetro(rideId){
-  taximetro.rideId=rideId;
-  taximetro.kmTotal=0;
-  taximetro.ultimoPonto=null;
-  document.getElementById("taximetro-section").style.display="block";
-  taximetro.watchId=navigator.geolocation.watchPosition(
-    (pos)=>{
-      const lat=pos.coords.latitude, lon=pos.coords.longitude;
-      if(taximetro.ultimoPonto){
-        const dist=haversine(taximetro.ultimoPonto.lat,taximetro.ultimoPonto.lon,lat,lon);
-        if(dist<0.5) taximetro.kmTotal+=dist;
-      }
-      taximetro.ultimoPonto={lat,lon};
-      document.getElementById("taximetro-km").textContent=taximetro.kmTotal.toFixed(2);
-    },
-    (err)=>lg("GPS erro: "+err.message,"e"),
-    {enableHighAccuracy:true,maximumAge:0,timeout:10000}
-  );
+  taximetro={rideId,watchId:null,kmTotal:0,ultimoPonto:null};
+  taximetro.watchId=navigator.geolocation.watchPosition(pos=>{
+    const lat=pos.coords.latitude,lon=pos.coords.longitude;
+    if(taximetro.ultimoPonto){
+      const d=haversine(taximetro.ultimoPonto.lat,taximetro.ultimoPonto.lon,lat,lon);
+      if(d<0.5)taximetro.kmTotal+=d;
+    }
+    taximetro.ultimoPonto={lat,lon};
+    lg("🚕 "+taximetro.kmTotal.toFixed(2)+" km","i");
+  },err=>lg("GPS: "+err.message,"e"),{enableHighAccuracy:true,maximumAge:0,timeout:10000});
   lg("Taximetro iniciado #"+rideId,"s");
 }
 
 function pararTaximetro(){
-  if(taximetro.watchId!==null){
-    navigator.geolocation.clearWatch(taximetro.watchId);
-    taximetro.watchId=null;
-  }
-  document.getElementById("taximetro-section").style.display="none";
-  lg("Taximetro parado — "+taximetro.kmTotal.toFixed(2)+" km","s");
-  return Math.max(1, Math.round(taximetro.kmTotal));
+  if(taximetro.watchId!==null){navigator.geolocation.clearWatch(taximetro.watchId);taximetro.watchId=null;}
+  const km=Math.max(1,Math.round(taximetro.kmTotal));
+  lg("Taximetro parado — "+taximetro.kmTotal.toFixed(2)+" km → "+km+" km","s");
+  return km;
 }
 
-/* ── MAPS ── */
 const CAT={0:"Nenhuma",1:"Basico",2:"Conforto",3:"Luxo"};
 const DS={0:"Nenhum",1:"Pendente",2:"Aprovado",3:"Rejeitado",4:"Revogado"};
 const RS={0:"—",1:"Criada",2:"Aceita",3:"Iniciada",4:"Concluida",5:"Cancelada",6:"Rejeitada"};
 const RC={1:"cbl",2:"cye",3:"cpu",4:"cgr",5:"cre",6:"cre"};
 
-/* ── STATE ── */
 let P=null,SG=null,me="";
 let CN=null,CG=null,CE=null;
 let AD={nft:"",gov:"",esc:""};
-let ST={drivers:[],rides:[],myP:null,
-  no:"",go:"",eo:"",ng:"",gn:"",eg:"",sop:"",
-  iNo:false,iGo:false,iEo:false,iAppr:false,hNFT:false,saqueWei:0n};
+let ST={drivers:[],rides:[],myP:null,no:"",go:"",eo:"",ng:"",gn:"",eg:"",sop:"",iNo:false,iGo:false,iEo:false,iAppr:false,hNFT:false,saqueWei:0n};
 
-/* ── UTILS ── */
 const H=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const sh=a=>(!a||a===ethers.ZeroAddress)?"—":a.slice(0,6)+"..."+a.slice(-4);
 const fe=w=>{try{return Number(ethers.formatEther(w)).toFixed(6)}catch{return"0.000000"}};
@@ -399,226 +355,196 @@ function fe2(e){
 }
 
 function lg(m,t="i"){
-  const b=document.getElementById("lm");
-  const el=document.createElement("span");
+  const b=document.getElementById("lm"),el=document.createElement("span");
   const map={i:"li",s:"ls",e:"le_",p:"lp"};
   el.className="le "+(map[t]||"li");el.textContent=m;
   b.insertBefore(el,b.firstChild);
   while(b.children.length>8)b.removeChild(b.lastChild);
 }
 function tt(title,msg,type="i"){
-  const icons={i:"ℹ️",s:"✅",e:"❌",p:"⏳"};
-  const map={i:"",s:"s",e:"e",p:"p"};
-  const c=document.getElementById("tc");
-  const el=document.createElement("div");
+  const icons={i:"ℹ️",s:"✅",e:"❌",p:"⏳"},map={i:"",s:"s",e:"e",p:"p"};
+  const c=document.getElementById("tc"),el=document.createElement("div");
   el.className="t "+(map[type]||"");
   el.innerHTML=`<span class="ti">${icons[type]||"ℹ️"}</span><div><div class="tt">${H(title)}</div><div>${H(msg)}</div></div>`;
   c.appendChild(el);setTimeout(()=>el.remove(),5500);
 }
 
-/* ── ORACLE ── */
 async function carregarPrecoETH(){
   try{
-    const price=await CO.getETHPrice();
-    ethUSD=Number(price)/1e8;
-    const el=document.getElementById("nethpricebrl");
-    if(el) el.textContent="R$ "+(ethUSD*BRL_RATE).toFixed(2);
-    const hd=document.getElementById("bethprice");
-    if(hd){hd.textContent="ETH R$ "+(ethUSD*BRL_RATE).toFixed(2);hd.style.display="inline";}
+    const price=await CO.getETHPrice();ethUSD=Number(price)/1e8;
+    const el=document.getElementById("nethpricebrl");if(el)el.textContent="R$ "+(ethUSD*BRL_RATE).toFixed(2);
+    const hd=document.getElementById("bethprice");if(hd){hd.textContent="ETH R$ "+(ethUSD*BRL_RATE).toFixed(2);hd.style.display="inline";}
     lg("Oraculo Chainlink: ETH R$ "+(ethUSD*BRL_RATE).toFixed(2),"s");
-  }catch(e){
-    ethUSD=0;
-    const el=document.getElementById("nethpricebrl");
-    if(el) el.textContent="Indisponivel";
-  }
+  }catch(e){ethUSD=0;const el=document.getElementById("nethpricebrl");if(el)el.textContent="Indisponivel";}
 }
 
-/* ── OSRM ── */
 async function calcularOSRM(){
-  const or=document.getElementById("ror").value.trim();
-  const de=document.getElementById("rde").value.trim();
-  if(!or||!de) return;
+  const or=document.getElementById("ror").value.trim(),de=document.getElementById("rde").value.trim();
+  if(!or||!de)return;
   const status=document.getElementById("osrm-status");
-  status.style.display="block";
-  status.textContent="⏳ Calculando rota via OSRM + OpenStreetMap...";
+  status.style.display="block";status.textContent="⏳ Calculando rota via OSRM...";
   try{
-    // Photon — geocoding rapido baseado em OpenStreetMap
     const [r1,r2]=await Promise.all([
-      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(or)}&limit=1&lang=pt`).then(r=>r.json()),
-      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(de)}&limit=1&lang=pt`).then(r=>r.json()),
+      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(or)}&format=json&limit=1`).then(r=>r.json()),
+      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(de)}&format=json&limit=1`).then(r=>r.json()),
     ]);
-    if(!r1.features?.length) throw new Error("Origem nao encontrada.");
-    if(!r2.features?.length) throw new Error("Destino nao encontrado.");
-    const [lon1f,lat1f]=r1.features[0].geometry.coordinates;
-    const [lon2f,lat2f]=r2.features[0].geometry.coordinates;
-    const lat1=lat1f.toFixed(6), lon1=lon1f.toFixed(6);
-    const lat2=lat2f.toFixed(6), lon2=lon2f.toFixed(6);
+    if(!r1.length)throw new Error("Origem nao encontrada.");
+    if(!r2.length)throw new Error("Destino nao encontrado.");
+    const lat1=parseFloat(r1[0].lat).toFixed(6),lon1=parseFloat(r1[0].lon).toFixed(6);
+    const lat2=parseFloat(r2[0].lat).toFixed(6),lon2=parseFloat(r2[0].lon).toFixed(6);
     const osrm=await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`).then(r=>r.json());
-    if(osrm.code!=="Ok") throw new Error("OSRM nao encontrou rota.");
+    if(osrm.code!=="Ok")throw new Error("OSRM nao encontrou rota.");
     const km=(osrm.routes[0].distance/1000).toFixed(2);
     osrmData={lat1,lon1,lat2,lon2,km:Number(km)};
-    document.getElementById("rlat1").value=lat1;
-    document.getElementById("rlon1").value=lon1;
-    document.getElementById("rlat2").value=lat2;
-    document.getElementById("rlon2").value=lon2;
+    document.getElementById("rlat1").value=lat1;document.getElementById("rlon1").value=lon1;
+    document.getElementById("rlat2").value=lat2;document.getElementById("rlon2").value=lon2;
     document.getElementById("qkm").textContent=km+" km";
-    status.style.display="none";
-    lg("OSRM: "+km+" km","s");
-    quote();
-  }catch(e){
-    status.textContent="❌ "+fe2(e);
-    lg("OSRM erro: "+fe2(e),"e");
-    tt("Erro OSRM",fe2(e),"e");
-  }
+    status.style.display="none";lg("OSRM: "+km+" km","s");quote();
+  }catch(e){status.textContent="❌ "+fe2(e);lg("OSRM erro: "+fe2(e),"e");tt("Erro OSRM",fe2(e),"e");}
 }
 
-/* ── CONECTAR ── */
 async function conectar(){
   if(!window.ethereum){tt("MetaMask nao encontrada","Instale a extensao MetaMask.","e");return;}
   try{
     lg("Abrindo MetaMask...","p");
     const contas=await window.ethereum.request({method:"eth_requestAccounts"});
-    if(!contas||contas.length===0) throw new Error("Nenhuma conta autorizada.");
-    P=new ethers.BrowserProvider(window.ethereum);
-    SG=await P.getSigner();
-    me=await SG.getAddress();
-    const bal=await P.getBalance(me);
-    const ethBal=Number(ethers.formatEther(bal)).toFixed(4);
-    document.getElementById("bwallet").textContent=sh(me);
-    document.getElementById("bwallet").style.display="inline";
-    document.getElementById("bbal").textContent=ethBal+" ETH";
-    document.getElementById("bbal").style.display="inline";
-    lg("Conectado: "+sh(me),"s");
-    tt("MetaMask conectada!",sh(me)+" — "+ethBal+" ETH","s");
-    document.getElementById("s1").style.display="none";
-    document.getElementById("s2").style.display="block";
+    if(!contas||contas.length===0)throw new Error("Nenhuma conta autorizada.");
+    P=new ethers.BrowserProvider(window.ethereum);SG=await P.getSigner();me=await SG.getAddress();
+    const bal=await P.getBalance(me),ethBal=Number(ethers.formatEther(bal)).toFixed(4);
+    document.getElementById("bwallet").textContent=sh(me);document.getElementById("bwallet").style.display="inline";
+    document.getElementById("bbal").textContent=ethBal+" ETH";document.getElementById("bbal").style.display="inline";
+    lg("Conectado: "+sh(me),"s");tt("MetaMask conectada!",sh(me)+" — "+ethBal+" ETH","s");
+    document.getElementById("s1").style.display="none";document.getElementById("s2").style.display="block";
     const saved=sv();
     document.getElementById("anft").value=saved.nft||"";
     document.getElementById("agov").value=saved.gov||"";
     document.getElementById("aesc").value=saved.esc||"";
+    document.getElementById("acancel").value=saved.cancel||"";
+    document.getElementById("arota").value=saved.rota||"";
+    document.getElementById("asubid").value=saved.subid||"";
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
   }catch(e){lg("Erro: "+fe2(e),"e");tt("Erro de conexao",fe2(e),"e");}
 }
 
 async function ligarContratos(){
-  const eb=document.getElementById("errbox");
-  eb.style.display="none";
+  const eb=document.getElementById("errbox");eb.style.display="none";
   try{
     const nft=document.getElementById("anft").value.trim();
     const gov=document.getElementById("agov").value.trim();
     const esc=document.getElementById("aesc").value.trim();
-    if(!nft||!gov||!esc) throw new Error("Preencha os 3 enderecos.");
-    if(!ethers.isAddress(nft)) throw new Error("Endereco DriverNFT invalido.");
-    if(!ethers.isAddress(gov)) throw new Error("Endereco Governance invalido.");
-    if(!ethers.isAddress(esc)) throw new Error("Endereco RideEscrow invalido.");
+    if(!nft||!gov||!esc)throw new Error("Preencha os 3 enderecos obrigatorios.");
+    if(!ethers.isAddress(nft))throw new Error("Endereco DriverNFT invalido.");
+    if(!ethers.isAddress(gov))throw new Error("Endereco Governance invalido.");
+    if(!ethers.isAddress(esc))throw new Error("Endereco RideEscrow invalido.");
     lg("Verificando contratos...","p");
     const [c1,c2,c3]=await Promise.all([P.getCode(nft),P.getCode(gov),P.getCode(esc)]);
-    if(c1==="0x") throw new Error("DriverNFT: sem contrato nesse endereco.");
-    if(c2==="0x") throw new Error("Governance: sem contrato nesse endereco.");
-    if(c3==="0x") throw new Error("RideEscrow: sem contrato nesse endereco.");
+    if(c1==="0x")throw new Error("DriverNFT: sem contrato nesse endereco.");
+    if(c2==="0x")throw new Error("Governance: sem contrato nesse endereco.");
+    if(c3==="0x")throw new Error("RideEscrow: sem contrato nesse endereco.");
     AD={nft:ethers.getAddress(nft),gov:ethers.getAddress(gov),esc:ethers.getAddress(esc)};
-    ss(AD);
     CN=new ethers.Contract(AD.nft,ANFT,SG);
     CG=new ethers.Contract(AD.gov,AGOV,SG);
     CE=new ethers.Contract(AD.esc,AESC,SG);
     CO=new ethers.Contract(ORACLE_ADDR,AORACLE,P);
+
+    // Cancelamento.sol
+    const cancelAddr=document.getElementById("acancel").value.trim();
+    if(cancelAddr&&ethers.isAddress(cancelAddr)){
+      AD.cancel=ethers.getAddress(cancelAddr);
+      const cancelAtual=await sc(()=>CE.cancelamento(),ethers.ZeroAddress);
+      if(cancelAtual.toLowerCase()!==AD.cancel.toLowerCase()){
+        lg("Chamando setCancelamento()...","p");
+        tt("Aguardando MetaMask","Confirme setCancelamento().","p");
+        try{const txc=await CE.setCancelamento(AD.cancel);await txc.wait();lg("setCancelamento() OK!","s");}
+        catch(e){lg("Erro setCancelamento: "+fe2(e),"e");}
+      } else {lg("Cancelamento.sol ja configurado","s");}
+    }
+
+    // Rota.sol
+    const rotaAddr=document.getElementById("arota").value.trim();
+    const subId=document.getElementById("asubid").value.trim();
+    if(rotaAddr&&ethers.isAddress(rotaAddr)){
+      AD.rota=ethers.getAddress(rotaAddr);
+      const AROTA=["function subscriptionId() view returns (uint64)","function setSubscriptionId(uint64) external"];
+      const CR=new ethers.Contract(AD.rota,AROTA,SG);
+      const rotaAtual=await sc(()=>CE.rota(),ethers.ZeroAddress);
+      if(rotaAtual.toLowerCase()!==AD.rota.toLowerCase()){
+        lg("Chamando setRota()...","p");tt("Aguardando MetaMask","Confirme setRota().","p");
+        try{const tx=await CE.setRota(AD.rota);await tx.wait();lg("setRota() OK!","s");}
+        catch(e){lg("Erro setRota: "+fe2(e),"e");}
+      } else {lg("Rota.sol ja configurado","s");}
+      if(subId&&Number(subId)>0){
+        AD.subid=subId;
+        try{
+          const subAtual=await CR.subscriptionId();
+          if(Number(subAtual)!==Number(subId)){
+            lg("Chamando setSubscriptionId("+subId+")...","p");
+            tt("Aguardando MetaMask","Confirme setSubscriptionId().","p");
+            const tx2=await CR.setSubscriptionId(Number(subId));await tx2.wait();
+            lg("setSubscriptionId("+subId+") OK!","s");
+          } else {lg("SubscriptionId ja configurado: "+subId,"s");}
+        }catch(e){lg("Erro setSubscriptionId: "+fe2(e),"e");}
+      }
+    }
+
+    ss({...AD});
     await carregarPrecoETH();
-    lg("Contratos OK!","s");
-    tt("Contratos conectados","DriverNFT + Governance + Escrow + Oracle","s");
+    lg("Contratos OK!","s");tt("Contratos conectados","","s");
     document.getElementById("s2").style.display="none";
     document.getElementById("s3").style.display="block";
     await refresh();
-  }catch(e){
-    eb.textContent=fe2(e);
-    eb.style.display="block";
-    lg("Erro: "+fe2(e),"e");
-  }
+  }catch(e){eb.textContent=fe2(e);eb.style.display="block";lg("Erro: "+fe2(e),"e");}
 }
 
 async function refresh(){
-  await carregarPrecoETH();
-  await carregarState();
-  await renderHeader();
-  renderStatus();
-  await carregarDrivers();
-  await carregarCorridas();
-  renderStats();
-  renderDriverSelect();
-  quote();
-  renderMotoristas();
-  renderMinhasCorridas();
-  renderMotPendentes();
-  renderMotAtivos();
-  renderAdmPendentes();
-  renderAdmAprovados();
-  renderMeuPerfil();
-  renderAdmNotice();
-  renderSaque();
+  await carregarPrecoETH();await carregarState();await renderHeader();renderStatus();
+  await carregarDrivers();await carregarCorridas();renderStats();renderDriverSelect();quote();
+  renderMotoristas();renderMinhasCorridas();renderMotPendentes();renderMotAtivos();
+  renderAdmPendentes();renderAdmAprovados();renderMeuPerfil();renderAdmNotice();renderSaque();
 }
 
 async function carregarState(){
   [ST.no,ST.go,ST.eo,ST.ng,ST.gn,ST.eg,ST.sop,ST.iAppr,ST.hNFT,ST.saqueWei]=await Promise.all([
-    sc(()=>CN.owner(),ethers.ZeroAddress),
-    sc(()=>CG.owner(),ethers.ZeroAddress),
-    sc(()=>CE.owner(),ethers.ZeroAddress),
-    sc(()=>CN.governance(),ethers.ZeroAddress),
-    sc(()=>CG.driverNFT(),ethers.ZeroAddress),
-    sc(()=>CE.governance(),ethers.ZeroAddress),
-    sc(()=>CE.systemOperator(),ethers.ZeroAddress),
-    sc(()=>CG.isApprovedDriver(me),false),
-    sc(()=>CN.hasActiveNFT(me),false),
-    sc(()=>CE.pendingWithdrawals(me),0n),
+    sc(()=>CN.owner(),ethers.ZeroAddress),sc(()=>CG.owner(),ethers.ZeroAddress),sc(()=>CE.owner(),ethers.ZeroAddress),
+    sc(()=>CN.governance(),ethers.ZeroAddress),sc(()=>CG.driverNFT(),ethers.ZeroAddress),sc(()=>CE.governance(),ethers.ZeroAddress),
+    sc(()=>CE.systemOperator(),ethers.ZeroAddress),sc(()=>CG.isApprovedDriver(me),false),
+    sc(()=>CN.hasActiveNFT(me),false),sc(()=>CE.pendingWithdrawals(me),0n),
   ]);
-  ST.iNo=ST.no.toLowerCase()===me.toLowerCase();
-  ST.iGo=ST.go.toLowerCase()===me.toLowerCase();
-  ST.iEo=ST.eo.toLowerCase()===me.toLowerCase();
-  const rp=await sc(()=>CG.getDriverProfile(me),null);
-  ST.myP=pp(rp);
+  ST.iNo=ST.no.toLowerCase()===me.toLowerCase();ST.iGo=ST.go.toLowerCase()===me.toLowerCase();ST.iEo=ST.eo.toLowerCase()===me.toLowerCase();
+  ST.myP=pp(await sc(()=>CG.getDriverProfile(me),null));
 }
 
 function renderSaque(){
-  const sec=document.getElementById("saque-section");
-  const val=document.getElementById("saque-val");
+  const sec=document.getElementById("saque-section"),val=document.getElementById("saque-val");
   if(ST.saqueWei>0n){
-    sec.style.display="block";
-    val.textContent=fe(ST.saqueWei)+" ETH";
-    if(ethUSD>0){
-      const brl=(Number(ethers.formatEther(ST.saqueWei))*ethUSD*BRL_RATE).toFixed(2);
-      val.textContent+=` ≈ R$ ${brl}`;
-    }
-  } else {
-    sec.style.display="none";
-  }
+    sec.style.display="block";val.textContent=fe(ST.saqueWei)+" ETH";
+    if(ethUSD>0)val.textContent+=` ≈ R$ ${(Number(ethers.formatEther(ST.saqueWei))*ethUSD*BRL_RATE).toFixed(2)}`;
+  }else{sec.style.display="none";}
 }
-
-async function sacar(){
-  await tx("Sacando ETH...",()=>CE.withdraw(),"Saque realizado!","ETH transferido para sua carteira.");
-}
+async function sacar(){await tx("Sacando ETH...",()=>CE.withdraw(),"Saque realizado!","ETH transferido.");}
 
 function pp(r){
   if(!r)return null;
-  try{
-    if(!r[0]||r[0]===ethers.ZeroAddress)return null;
-    return{addr:r[0],model:r[1],plate:r[2],cid:r[3],reqAt:Number(r[4]),status:Number(r[5]),cat:Number(r[6]),priceWei:r[7]};
-  }catch{return null}
+  try{if(!r[0]||r[0]===ethers.ZeroAddress)return null;return{addr:r[0],model:r[1],plate:r[2],cid:r[3],reqAt:Number(r[4]),status:Number(r[5]),cat:Number(r[6]),priceWei:r[7]};}
+  catch{return null}
 }
 
 async function renderHeader(){
-  const bal=await P.getBalance(me);
-  const e=Number(ethers.formatEther(bal)).toFixed(4);
-  document.getElementById("bbal").textContent=e+" ETH";
-  document.getElementById("nbal").textContent=e;
+  const bal=await P.getBalance(me),e=Number(ethers.formatEther(bal)).toFixed(4);
+  document.getElementById("bbal").textContent=e+" ETH";document.getElementById("nbal").textContent=e;
 }
 
 function renderStatus(){
   const ok1=ST.ng.toLowerCase()===AD.gov.toLowerCase();
   const ok2=ST.gn.toLowerCase()===AD.nft.toLowerCase();
   const ok3=ST.eg.toLowerCase()===AD.gov.toLowerCase();
+  const okRota=!!AD.rota;
   document.getElementById("cstatus").innerHTML=`
     <div class="sc"><div class="sl">DriverNFT</div><div class="sv">${H(sh(AD.nft))}</div></div>
     <div class="sc"><div class="sl">Governance</div><div class="sv">${H(sh(AD.gov))}</div></div>
     <div class="sc"><div class="sl">RideEscrow</div><div class="sv">${H(sh(AD.esc))}</div></div>
+    <div class="sc"><div class="sl">Rota.sol</div><div class="sv ${okRota?"ok":"bad"}">${okRota?"✅ "+sh(AD.rota):"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">NFT→Gov</div><div class="sv ${ok1?"ok":"bad"}">${ok1?"✅ OK":"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">Gov→NFT</div><div class="sv ${ok2?"ok":"bad"}">${ok2?"✅ OK":"❌ Verificar"}</div></div>
     <div class="sc"><div class="sl">Escrow→Gov</div><div class="sv ${ok3?"ok":"bad"}">${ok3?"✅ OK":"❌ Verificar"}</div></div>
@@ -626,39 +552,22 @@ function renderStatus(){
     <div class="sc"><div class="sl">OSRM</div><div class="sv ok">✅ Gratuito — sem API key</div></div>`;
   document.getElementById("cnote").innerHTML=
     (ok1?"✅":"❌ <b>Admin → DriverNFT.setGovernance()</b> precisa ser chamado!")+
-    (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)));
+    (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)))+
+    (okRota?"<br>✅ Rota.sol configurado.":"<br>❌ <b>Informe o endereco do Rota.sol.</b>");
 }
 
 async function carregarDrivers(){
-  const lb=await P.getBlockNumber();
-  const fb=Math.max(0,lb-5000);
+  const lb=await P.getBlockNumber(),fb=Math.max(0,lb-5000);
   let evs=[[],[],[],[],[]];
-  try{
-    evs=await Promise.all([
-      CG.queryFilter(CG.filters.DriverRequested(),fb,lb),
-      CG.queryFilter(CG.filters.DriverApproved(),fb,lb),
-      CG.queryFilter(CG.filters.DriverRejected(),fb,lb),
-      CG.queryFilter(CG.filters.DriverRevoked(),fb,lb),
-      CG.queryFilter(CG.filters.DriverPriceUpdated(),fb,lb),
-    ]);
-  }catch(err){lg("queryFilter falhou","p");}
+  try{evs=await Promise.all([CG.queryFilter(CG.filters.DriverRequested(),fb,lb),CG.queryFilter(CG.filters.DriverApproved(),fb,lb),CG.queryFilter(CG.filters.DriverRejected(),fb,lb),CG.queryFilter(CG.filters.DriverRevoked(),fb,lb),CG.queryFilter(CG.filters.DriverPriceUpdated(),fb,lb)]);}catch{}
   const set=new Set();
-  for(const arr of evs)for(const e of arr){
-    const a=e.args?.driver||e.args?.[0];
-    if(a&&ethers.isAddress(a))set.add(a.toLowerCase());
-  }
+  for(const arr of evs)for(const e of arr){const a=e.args?.driver||e.args?.[0];if(a&&ethers.isAddress(a))set.add(a.toLowerCase());}
   set.add(me.toLowerCase());
-  try{
-    const cached=JSON.parse(localStorage.getItem("vc_known_drivers")||"[]");
-    for(const addr of cached){if(ethers.isAddress(addr))set.add(addr.toLowerCase())}
-  }catch{}
+  try{const cached=JSON.parse(localStorage.getItem("vc_known_drivers")||"[]");for(const addr of cached){if(ethers.isAddress(addr))set.add(addr.toLowerCase())}}catch{}
   const list=[];
   for(const al of set){
-    const a=ethers.getAddress(al);
-    const r=await sc(()=>CG.getDriverProfile(a),null);
-    const p=pp(r);if(!p)continue;
-    const appr=await sc(()=>CG.isApprovedDriver(a),false);
-    const hn=await sc(()=>CN.hasActiveNFT(a),false);
+    const a=ethers.getAddress(al),r=await sc(()=>CG.getDriverProfile(a),null),p=pp(r);if(!p)continue;
+    const appr=await sc(()=>CG.isApprovedDriver(a),false),hn=await sc(()=>CN.hasActiveNFT(a),false);
     list.push({...p,appr,hn,pe:fe(p.priceWei)});
   }
   try{localStorage.setItem("vc_known_drivers",JSON.stringify(list.map(d=>d.addr)))}catch{}
@@ -667,21 +576,14 @@ async function carregarDrivers(){
 }
 
 async function carregarCorridas(){
-  const tot=Number(await sc(()=>CE.rideCounter(),0n));
-  const list=[];
+  const tot=Number(await sc(()=>CE.rideCounter(),0n)),list=[];
   for(let i=1;i<=tot;i++){
     const r=await sc(()=>CE.getRide(i),null);if(!r)continue;
     const m=gm(i)||{};
-    // ✅ tuple atualizado — sem driverConfirmedDestinationAt
-    list.push({
-      id:Number(r[0]),pass:r[1],driv:r[2],qw:r[3],
-      latOr:r[4],lonOr:r[5],latDe:r[6],lonDe:r[7],
-      cAt:Number(r[8]),aAt:Number(r[9]),stAt:Number(r[10]),cpAt:Number(r[11]),st:Number(r[12]),
-      or:m.or||"(nao salvo)",de:m.de||"(nao salvo)",km:m.km||"—"
-    });
+    // tuple: id,passenger,driver,quotedPriceWei,latOrigem,lonOrigem,latDestino,lonDestino,createdAt,acceptedAt,startedAt,completedAt,status
+    list.push({id:Number(r[0]),pass:r[1],driv:r[2],qw:r[3],latOr:r[4],lonOr:r[5],latDe:r[6],lonDe:r[7],cAt:Number(r[8]),aAt:Number(r[9]),stAt:Number(r[10]),cpAt:Number(r[11]),st:Number(r[12]),or:m.or||"(nao salvo)",de:m.de||"(nao salvo)",km:m.km||"—"});
   }
-  list.sort((a,b)=>b.id-a.id);
-  ST.rides=list;
+  list.sort((a,b)=>b.id-a.id);ST.rides=list;
 }
 
 function renderStats(){
@@ -691,35 +593,25 @@ function renderStats(){
 }
 
 function renderDriverSelect(){
-  const sel=document.getElementById("dsel");
-  const ap=ST.drivers.filter(d=>d.status===2);
+  const sel=document.getElementById("dsel"),ap=ST.drivers.filter(d=>d.status===2);
   if(!ap.length){sel.innerHTML=`<option value="">— Nenhum motorista aprovado —</option>`;return}
   sel.innerHTML=ap.map(d=>`<option value="${H(d.addr)}">${H(sh(d.addr))} · ${H(d.model)} · ${H(CAT[d.cat]||"—")} · ${H(d.pe)} ETH/km</option>`).join("");
 }
 
 function quote(){
-  const addr=document.getElementById("dsel").value;
-  const d=ST.drivers.find(x=>x.addr.toLowerCase()===addr?.toLowerCase());
+  const addr=document.getElementById("dsel").value,d=ST.drivers.find(x=>x.addr.toLowerCase()===addr?.toLowerCase());
   if(!d){["qp","qt","qc","qtbrl"].forEach(x=>document.getElementById(x).textContent="—");return;}
-  const km=osrmData.km||0;
-  const pw=BigInt(d.priceWei);
-  const tot=pw*BigInt(Math.round(km));
-  const totETH=Number(ethers.formatEther(tot));
+  const km=osrmData.km||0,pw=BigInt(d.priceWei),tot=pw*BigInt(Math.round(km)),totETH=Number(ethers.formatEther(tot));
   document.getElementById("qp").textContent=d.pe+" ETH/km";
   document.getElementById("qt").textContent=fe(tot)+" ETH";
   document.getElementById("qc").textContent=CAT[d.cat]||"—";
   if(!document.getElementById("qkm").textContent||document.getElementById("qkm").textContent==="—")
     document.getElementById("qkm").textContent=km>0?km+" km":"Calcule a rota";
-  if(ethUSD>0){
-    document.getElementById("qtbrl").textContent="R$ "+(totETH*ethUSD*BRL_RATE).toFixed(2);
-  } else {
-    document.getElementById("qtbrl").textContent="Oraculo indisponivel";
-  }
+  document.getElementById("qtbrl").textContent=ethUSD>0?"R$ "+(totETH*ethUSD*BRL_RATE).toFixed(2):"Oraculo indisponivel";
 }
 
 function rc(r,btns){
-  const chip=RC[r.st]||"cbl";
-  const usd=ethUSD>0?"R$ "+(Number(ethers.formatEther(r.qw))*ethUSD*BRL_RATE).toFixed(2):"";
+  const chip=RC[r.st]||"cbl",usd=ethUSD>0?"R$ "+(Number(ethers.formatEther(r.qw))*ethUSD*BRL_RATE).toFixed(2):"";
   return`<div class="rc" data-ride-id="${r.id}"><div class="rm">
     <div class="rid">#${r.id} · ${H(fd(r.cAt))}</div>
     <div class="rro">${H(r.or)} → ${H(r.de)}</div>
@@ -732,15 +624,12 @@ function rc(r,btns){
 }
 
 function renderMinhasCorridas(){
-  const el=document.getElementById("minhas");
-  const mine=ST.rides.filter(r=>r.pass.toLowerCase()===me.toLowerCase());
+  const el=document.getElementById("minhas"),mine=ST.rides.filter(r=>r.pass.toLowerCase()===me.toLowerCase());
   if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣️</div>Nenhuma corrida.</div>`;return}
   el.innerHTML=mine.map(r=>{
     let b="";
-    // Antes do inicio — devolve 100% ao passageiro
-    if(r.st===1||r.st===2) b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
-    if(r.st===2) b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
-    // Apos inicio — passageiro pode finalizar ou cancelar com km do taximetro
+    if(r.st===1||r.st===2)b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
+    if(r.st===2)b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
     if(r.st===3){
       b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
       b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id})">Cancelar corrida</button>`;
@@ -750,8 +639,7 @@ function renderMinhasCorridas(){
 }
 
 function renderMotoristas(){
-  const el=document.getElementById("motlist");
-  const ap=ST.drivers.filter(d=>d.status===2);
+  const el=document.getElementById("motlist"),ap=ST.drivers.filter(d=>d.status===2);
   if(!ap.length){el.innerHTML=`<div class="empty"><div class="ei">👤</div>Nenhum motorista aprovado.</div>`;return}
   el.innerHTML=ap.map(d=>{
     const ini=(d.model||"DR").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
@@ -761,18 +649,13 @@ function renderMotoristas(){
 }
 
 function renderMotPendentes(){
-  const el=document.getElementById("mpend");
-  const list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&r.st===1);
+  const el=document.getElementById("mpend"),list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&r.st===1);
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">📨</div>Nenhuma.</div>`;return}
-  el.innerHTML=list.map(r=>rc(r,
-    `<button class="btn bs bsm bfull" onclick="aceitarCorrida(${r.id})">Aceitar</button>
-     <button class="btn bd bsm bfull" onclick="rejeitarCorrida(${r.id})">Rejeitar</button>`
-  )).join("");
+  el.innerHTML=list.map(r=>rc(r,`<button class="btn bs bsm bfull" onclick="aceitarCorrida(${r.id})">Aceitar</button><button class="btn bd bsm bfull" onclick="rejeitarCorrida(${r.id})">Rejeitar</button>`)).join("");
 }
 
 function renderMotAtivos(){
-  const el=document.getElementById("mativo");
-  const list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&[2,3].includes(r.st));
+  const el=document.getElementById("mativo"),list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&[2,3].includes(r.st));
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">🚦</div>Nenhuma.</div>`;return}
   el.innerHTML=list.map(r=>{
     let b="";
@@ -785,30 +668,19 @@ function renderMotAtivos(){
 }
 
 function renderAdmPendentes(){
-  const el=document.getElementById("apend");
-  const list=ST.drivers.filter(d=>d.status===1);
+  const el=document.getElementById("apend"),list=ST.drivers.filter(d=>d.status===1);
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">📭</div>Nenhuma.</div>`;return}
-  el.innerHTML=list.map(d=>`
-    <div class="ac"><div class="am"><div class="at">${H(sh(d.addr))}</div><div class="as">${H(d.model)} · ${H(d.plate)} · ${H(d.cid)}</div></div>
-    <div class="aa">
-      <select id="cs-${H(d.addr)}"><option value="1">Basico</option><option value="2">Conforto</option><option value="3">Luxo</option></select>
-      <button class="btn bs bsm" onclick="aprovarMot('${H(d.addr)}')">Aprovar</button>
-      <button class="btn bd bsm" onclick="rejeitarMot('${H(d.addr)}')">Rejeitar</button>
-    </div></div>`).join("");
+  el.innerHTML=list.map(d=>`<div class="ac"><div class="am"><div class="at">${H(sh(d.addr))}</div><div class="as">${H(d.model)} · ${H(d.plate)} · ${H(d.cid)}</div></div><div class="aa"><select id="cs-${H(d.addr)}"><option value="1">Basico</option><option value="2">Conforto</option><option value="3">Luxo</option></select><button class="btn bs bsm" onclick="aprovarMot('${H(d.addr)}')">Aprovar</button><button class="btn bd bsm" onclick="rejeitarMot('${H(d.addr)}')">Rejeitar</button></div></div>`).join("");
 }
 
 function renderAdmAprovados(){
-  const el=document.getElementById("aaprov");
-  const list=ST.drivers.filter(d=>d.status===2);
+  const el=document.getElementById("aaprov"),list=ST.drivers.filter(d=>d.status===2);
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">🪪</div>Nenhum.</div>`;return}
-  el.innerHTML=list.map(d=>`
-    <div class="ac"><div class="am"><div class="at">${H(sh(d.addr))}</div><div class="as">${H(d.model)} · ${H(d.plate)} · ${H(CAT[d.cat]||"—")} · ${H(d.pe)} ETH/km · ${d.hn?"NFT ✅":"sem NFT"}</div></div>
-    <div class="aa"><button class="btn bd bsm" onclick="revogarMot('${H(d.addr)}')">Revogar</button></div></div>`).join("");
+  el.innerHTML=list.map(d=>`<div class="ac"><div class="am"><div class="at">${H(sh(d.addr))}</div><div class="as">${H(d.model)} · ${H(d.plate)} · ${H(CAT[d.cat]||"—")} · ${H(d.pe)} ETH/km · ${d.hn?"NFT ✅":"sem NFT"}</div></div><div class="aa"><button class="btn bd bsm" onclick="revogarMot('${H(d.addr)}')">Revogar</button></div></div>`).join("");
 }
 
 function renderMeuPerfil(){
-  const el=document.getElementById("meuPerfil");
-  const p=ST.myP;
+  const el=document.getElementById("meuPerfil"),p=ST.myP;
   if(!p){el.innerHTML="Sem perfil on-chain para esta carteira.";return}
   el.innerHTML=`Status: <b>${H(DS[p.status]||"—")}</b> · Categoria: ${H(CAT[p.cat]||"—")} · Veiculo: ${H(p.model)} · Placa: ${H(p.plate)} · Preco/km: ${H(fe(p.priceWei))} ETH · NFT: ${ST.hNFT?"✅":"❌"}`;
 }
@@ -819,50 +691,32 @@ function renderAdmNotice(){
     <div class="sc"><div class="sl">Gov owner</div><div class="sv">${H(sh(ST.go))} ${ST.iGo?"(voce)":""}</div></div>
     <div class="sc"><div class="sl">Escrow owner</div><div class="sv">${H(sh(ST.eo))} ${ST.iEo?"(voce)":""}</div></div>
     <div class="sc"><div class="sl">systemOperator</div><div class="sv">${H(sh(ST.sop))}</div></div>`;
-  document.getElementById("blnk").disabled=!ST.iNo;
-  document.getElementById("bsop").disabled=!ST.iEo;
-  document.getElementById("anote").innerHTML=[
-    ST.iNo?"✅ Voce pode chamar DriverNFT.setGovernance().":"ℹ️ Voce nao e owner do DriverNFT.",
-    ST.iGo?"✅ Voce pode aprovar/rejeitar/revogar motoristas.":"ℹ️ Voce nao e owner da Governance.",
-    ST.iEo?"✅ Voce pode definir o systemOperator.":"ℹ️ Voce nao e owner do RideEscrow.",
-  ].join("<br>");
+  document.getElementById("blnk").disabled=!ST.iNo;document.getElementById("bsop").disabled=!ST.iEo;
+  document.getElementById("anote").innerHTML=[ST.iNo?"✅ Voce pode chamar DriverNFT.setGovernance().":"ℹ️ Voce nao e owner do DriverNFT.",ST.iGo?"✅ Voce pode aprovar/rejeitar/revogar motoristas.":"ℹ️ Voce nao e owner da Governance.",ST.iEo?"✅ Voce pode definir o systemOperator.":"ℹ️ Voce nao e owner do RideEscrow."].join("<br>");
 }
 
 async function tx(msg,fn,ok,det){
   lg(msg,"p");tt("Aguardando MetaMask","Confirme a transacao.","p");
   try{
-    const t=await fn();
-    lg("Tx enviada...","p");
-    await t.wait();
+    const t=await fn();lg("Tx enviada...","p");await t.wait();
     lg(ok,"s");tt("Sucesso",det,"s");
-    await new Promise(r=>setTimeout(r,2000));
-    await refresh();
+    await new Promise(r=>setTimeout(r,2000));await refresh();
   }catch(e){
-    const msg2=fe2(e);
-    lg("Erro: "+msg2,"e");tt("Erro",msg2,"e");
-    if(String(e.code)!=="4001"){
-      lg("Recarregando...","p");
-      await new Promise(r=>setTimeout(r,2000));
-      await refresh();
-    }
+    const msg2=fe2(e);lg("Erro: "+msg2,"e");tt("Erro",msg2,"e");
+    if(String(e.code)!=="4001"){lg("Recarregando...","p");await new Promise(r=>setTimeout(r,2000));await refresh();}
   }
 }
 
-async function setGov(){
-  if(!ST.iNo){tt("Sem permissao","So o owner do NFT.","e");return}
-  await tx("setGovernance...",()=>CN.setGovernance(AD.gov),"NFT→Gov configurado.","Agora o Governance pode mintar NFTs.");
-}
+async function setGov(){if(!ST.iNo){tt("Sem permissao","So o owner do NFT.","e");return}await tx("setGovernance...",()=>CN.setGovernance(AD.gov),"NFT→Gov configurado.","");}
 async function setSop(){
-  if(!ST.iEo){tt("Sem permissao","So o owner do Escrow.","e");return}
+  if(!ST.iEo){tt("Sem permissao","","e");return}
   const v=document.getElementById("sopv").value.trim();
   if(!ethers.isAddress(v)){tt("Endereco invalido","","e");return}
   await tx("setSystemOperator...",()=>CE.setSystemOperator(v),"systemOperator atualizado.",sh(v));
 }
 async function solicitarCadastro(){
-  const m=document.getElementById("dm").value.trim();
-  const p=document.getElementById("dp").value.trim();
-  const c=document.getElementById("dc").value.trim();
-  if(!m||!p||!c){tt("Campos obrigatorios","Preencha modelo, placa e CID.","e");return}
+  const m=document.getElementById("dm").value.trim(),p=document.getElementById("dp").value.trim(),c=document.getElementById("dc").value.trim();
+  if(!m||!p||!c){tt("Campos obrigatorios","","e");return}
   await tx("Solicitando cadastro...",()=>CG.requestDriverRegistration(m,p,c),"Solicitacao enviada.","Aguarde aprovacao.");
 }
 async function atualizarPreco(){
@@ -870,49 +724,29 @@ async function atualizarPreco(){
   if(!e||Number(e)<=0){tt("Preco invalido","","e");return}
   await tx("Atualizando preco...",()=>CG.setMyPricePerKm(ethers.parseEther(e)),"Preco atualizado.",e+" ETH/km");
 }
-async function aprovarMot(a){
-  if(!ST.iGo){tt("Sem permissao","","e");return}
-  const cat=Number(document.getElementById("cs-"+a)?.value||1);
-  await tx("Aprovando...",()=>CG.approveDriver(a,cat),"Aprovado!",sh(a));
-}
-async function rejeitarMot(a){
-  if(!ST.iGo){tt("Sem permissao","","e");return}
-  await tx("Rejeitando...",()=>CG.rejectDriver(a),"Rejeitado.",sh(a));
-}
-async function revogarMot(a){
-  if(!ST.iGo){tt("Sem permissao","","e");return}
-  await tx("Revogando...",()=>CG.revokeDriver(a),"Revogado.",sh(a));
-}
+async function aprovarMot(a){if(!ST.iGo){tt("Sem permissao","","e");return}const cat=Number(document.getElementById("cs-"+a)?.value||1);await tx("Aprovando...",()=>CG.approveDriver(a,cat),"Aprovado!",sh(a));}
+async function rejeitarMot(a){if(!ST.iGo){tt("Sem permissao","","e");return}await tx("Rejeitando...",()=>CG.rejectDriver(a),"Rejeitado.",sh(a));}
+async function revogarMot(a){if(!ST.iGo){tt("Sem permissao","","e");return}await tx("Revogando...",()=>CG.revokeDriver(a),"Revogado.",sh(a));}
 
 async function criarCorrida(){
   try{
-    const da=document.getElementById("dsel").value;
-    const or=document.getElementById("ror").value.trim();
-    const de=document.getElementById("rde").value.trim();
-    if(!ethers.isAddress(da)) throw new Error("Selecione um motorista.");
-    if(!or||!de) throw new Error("Preencha origem e destino.");
-    if(!osrmData.lat1||!osrmData.km||osrmData.km<=0) throw new Error("Calcule a rota primeiro.");
+    const da=document.getElementById("dsel").value,or=document.getElementById("ror").value.trim(),de=document.getElementById("rde").value.trim();
+    if(!ethers.isAddress(da))throw new Error("Selecione um motorista.");
+    if(!or||!de)throw new Error("Preencha origem e destino.");
+    if(!osrmData.lat1||!osrmData.km||osrmData.km<=0)throw new Error("Calcule a rota primeiro.");
     const pw=await CG.getDriverPrice(da);
-    if(pw<=0n) throw new Error("Motorista com preco invalido.");
+    if(pw<=0n)throw new Error("Motorista com preco invalido.");
     const tot=pw*BigInt(Math.round(osrmData.km));
-    lg("Criando corrida...","p");
-    tt("Aguardando MetaMask","Valor: "+fe(tot)+" ETH — "+osrmData.km+" km","p");
+    lg("Criando corrida...","p");tt("Aguardando MetaMask","Valor: "+fe(tot)+" ETH — "+osrmData.km+" km","p");
     const t=await CE.createRide(da,osrmData.lat1,osrmData.lon1,osrmData.lat2,osrmData.lon2,{value:tot});
-    const rec=await t.wait();
-    let rid=null;
-    for(const l of rec.logs){
-      try{const p=CE.interface.parseLog(l);if(p?.name==="RideCreated"){rid=Number(p.args[0]);break}}catch{}
-    }
-    if(!rid) throw new Error("Corrida criada mas ID nao encontrado.");
+    const rec=await t.wait();let rid=null;
+    for(const l of rec.logs){try{const p=CE.interface.parseLog(l);if(p?.name==="RideCreated"){rid=Number(p.args[0]);break}}catch{}}
+    if(!rid)throw new Error("Corrida criada mas ID nao encontrado.");
     sm(rid,{or,de,km:osrmData.km});
-    document.getElementById("ror").value="";
-    document.getElementById("rde").value="";
+    document.getElementById("ror").value="";document.getElementById("rde").value="";
     ["rlat1","rlon1","rlat2","rlon2"].forEach(id=>document.getElementById(id).value="");
-    osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};
-    document.getElementById("qkm").textContent="—";
-    lg("Corrida #"+rid+" criada!","s");
-    tt("Corrida criada!","ID "+rid,"s");
-    await refresh();
+    osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};document.getElementById("qkm").textContent="—";
+    lg("Corrida #"+rid+" criada!","s");tt("Corrida criada!","ID "+rid,"s");await refresh();
   }catch(e){lg("Erro: "+fe2(e),"e");tt("Erro",fe2(e),"e")}
 }
 
@@ -920,7 +754,7 @@ async function aceitarCorrida(id){await tx("Aceitando #"+id,()=>CE.acceptRide(id
 async function rejeitarCorrida(id){await tx("Rejeitando #"+id,()=>CE.rejectRide(id),"Rejeitada #"+id,"ID "+id)}
 async function cancelarCorrida(id){await tx("Cancelando #"+id,()=>CE.cancelBeforeStart(id),"Cancelada #"+id,"ID "+id)}
 
-// Inicia corrida + taximetro
+// Inicia corrida + taximetro GPS
 async function iniciarCorrida(id){
   await tx("Iniciando #"+id,()=>CE.startRide(id),"Iniciada #"+id,"ID "+id);
   iniciarTaximetro(id);
@@ -929,38 +763,25 @@ async function iniciarCorrida(id){
 // Motorista confirma destino — para taximetro e envia km
 async function confirmarDestino(id){
   const km=pararTaximetro();
-  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos","s");
-  await tx(
-    "Confirmando destino #"+id,
-    ()=>CE.confirmDestinationReached(id, km),
-    "Destino confirmado #"+id,
-    "Pagamento proporcional distribuido — "+km+" km"
-  );
+  tt("Taximetro",taximetro.kmTotal.toFixed(2)+" km percorridos","s");
+  await tx("Confirmando destino #"+id,()=>CE.confirmDestinationReached(id,km),"Destino confirmado #"+id,km+" km percorridos");
 }
 
 // Passageiro confirma conclusao — para taximetro e envia km
 async function concluirCorrida(id){
   const km=pararTaximetro();
-  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos","s");
-  await tx(
-    "Concluindo #"+id,
-    ()=>CE.confirmRideCompletion(id, km),
-    "Concluida #"+id,
-    "Pagamento proporcional distribuido — "+km+" km"
-  );
+  tt("Taximetro",taximetro.kmTotal.toFixed(2)+" km percorridos","s");
+  await tx("Concluindo #"+id,()=>CE.confirmRideCompletion(id,km),"Concluida #"+id,km+" km percorridos");
 }
 
 // Cancelamento apos inicio — para taximetro e envia km proporcional
 async function cancelarAposInicio(id){
   const km=pararTaximetro();
-  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos — cancelando","p");
-  await tx(
-    "Cancelando #"+id,
-    ()=>CE.cancelAfterStart(id, km),
-    "Cancelada #"+id,
-    "Pagamento proporcional ao percorrido — "+km+" km"
-  );
+  tt("Cancelando",taximetro.kmTotal.toFixed(2)+" km — proporcional","p");
+  await tx("Cancelando #"+id,()=>CE.cancelAfterStart(id,km),"Cancelada #"+id,km+" km percorridos");
 }
+
+async function timeout(id){await tx("Timeout #"+id,()=>CE.finalizeAfterTimeout(id),"Timeout #"+id,"ID "+id)}
 
 function tab(n){
   const ns=["pass","moto","adm"];
@@ -971,3 +792,4 @@ function tab(n){
 </script>
 </body>
 </html>
+
