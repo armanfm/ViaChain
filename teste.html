@@ -361,14 +361,16 @@ function iniciarTaximetro(rideId){
   lg("Taximetro iniciado #"+rideId,"s");
 }
 
-function pararTaximetro(){
+function pararTaximetro(minimo1km=true){
   if(taximetro.watchId!==null){
     navigator.geolocation.clearWatch(taximetro.watchId);
     taximetro.watchId=null;
   }
   document.getElementById("taximetro-section").style.display="none";
-  lg("Taximetro parado — "+taximetro.kmTotal.toFixed(2)+" km","s");
-  return Math.max(1, Math.round(taximetro.kmTotal));
+  const km=Math.round(taximetro.kmTotal);
+  const kmFinal=minimo1km?Math.max(1,km):km;
+  lg("Taximetro parado — "+taximetro.kmTotal.toFixed(2)+" km → "+kmFinal+" km","s");
+  return kmFinal;
 }
 
 /* ── MAPS ── */
@@ -740,7 +742,7 @@ function renderMinhasCorridas(){
     // Apos inicio — passageiro pode finalizar ou cancelar com km do taximetro
     if(r.st===3){
       b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
-      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id})">Cancelar corrida</button>`;
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},'passageiro')">Cancelar corrida</button>`;
     }
     return rc(r,b);
   }).join("");
@@ -775,7 +777,7 @@ function renderMotAtivos(){
     let b="";
     if(r.st===3){
       b+=`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`;
-      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id})">Cancelar corrida</button>`;
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},'motorista')">Cancelar corrida</button>`;
     }
     return rc(r,b);
   }).join("");
@@ -924,9 +926,24 @@ async function iniciarCorrida(id){
 }
 
 // Motorista confirma destino — para taximetro e envia km
+function mostrarDivisao(id, km){
+  const ride=ST.rides.find(r=>r.id===id);
+  if(!ride)return;
+  const d=ST.drivers.find(x=>x.addr.toLowerCase()===ride.driv.toLowerCase());
+  if(!d)return;
+  const pw=BigInt(d.priceWei);
+  const driverWei=BigInt(km)*pw;
+  const driverFinal=driverWei>ride.qw?ride.qw:driverWei;
+  const passFinal=ride.qw-driverFinal;
+  tt("Divisao do pagamento",
+    "🚗 Motorista: "+fe(driverFinal)+" ETH | 👤 Passageiro: "+fe(passFinal)+" ETH",
+    "s"
+  );
+}
+
 async function confirmarDestino(id){
   const km=pararTaximetro();
-  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos","s");
+  mostrarDivisao(id, km);
   await tx(
     "Confirmando destino #"+id,
     ()=>CE.confirmDestinationReached(id, km),
@@ -938,7 +955,7 @@ async function confirmarDestino(id){
 // Passageiro confirma conclusao — para taximetro e envia km
 async function concluirCorrida(id){
   const km=pararTaximetro();
-  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos","s");
+  mostrarDivisao(id, km);
   await tx(
     "Concluindo #"+id,
     ()=>CE.confirmRideCompletion(id, km),
@@ -948,14 +965,17 @@ async function concluirCorrida(id){
 }
 
 // Cancelamento apos inicio — para taximetro e envia km proporcional
-async function cancelarAposInicio(id){
-  const km=pararTaximetro();
-  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos — cancelando","p");
+async function cancelarAposInicio(id, quem="passageiro"){
+  // Passageiro cancela — minimo 1km (motorista perdeu tempo)
+  // Motorista cancela — km exato (responsabilidade dele)
+  const minimo = quem === "passageiro";
+  const km=pararTaximetro(minimo);
+  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km — "+km+" km cobrado","p");
   await tx(
     "Cancelando #"+id,
     ()=>CE.cancelAfterStart(id, km),
     "Cancelada #"+id,
-    "Pagamento proporcional ao percorrido — "+km+" km"
+    "Pagamento proporcional — "+km+" km"
   );
 }
 
