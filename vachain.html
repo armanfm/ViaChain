@@ -177,19 +177,19 @@
     <div id="tp-pass" class="tc on">
       <div class="sec">
         <div class="sect">➕ Criar corrida</div>
-        <div class="secs">Selecione o motorista e preencha a rota. As coordenadas sao calculadas via OSRM (OpenStreetMap) — gratuito e sem API key.</div>
+        <div class="secs">Selecione o motorista e preencha a rota. As coordenadas sao calculadas via OpenCage + OSRM.</div>
         <div class="grid">
           <div class="fg"><label>Motorista</label><select id="dsel" onchange="quote()"></select></div>
           <div class="fg"><label>Origem (endereco)</label><input id="ror" placeholder="Ex: Av. Boa Viagem, Recife"/></div>
           <div class="fg"><label>Destino (endereco)</label><input id="rde" placeholder="Ex: Shopping Recife"/></div>
         </div>
         <div class="grid2" style="margin-bottom:10px">
-          <div class="fg"><label>Lat Origem</label><input id="rlat1" placeholder="Calculado pelo OSRM" readonly/></div>
-          <div class="fg"><label>Lon Origem</label><input id="rlon1" placeholder="Calculado pelo OSRM" readonly/></div>
-          <div class="fg"><label>Lat Destino</label><input id="rlat2" placeholder="Calculado pelo OSRM" readonly/></div>
-          <div class="fg"><label>Lon Destino</label><input id="rlon2" placeholder="Calculado pelo OSRM" readonly/></div>
+          <div class="fg"><label>Lat Origem</label><input id="rlat1" placeholder="Calculado via OpenCage" readonly/></div>
+          <div class="fg"><label>Lon Origem</label><input id="rlon1" placeholder="Calculado via OpenCage" readonly/></div>
+          <div class="fg"><label>Lat Destino</label><input id="rlat2" placeholder="Calculado via OpenCage" readonly/></div>
+          <div class="fg"><label>Lon Destino</label><input id="rlon2" placeholder="Calculado via OpenCage" readonly/></div>
         </div>
-        <div id="osrm-status" class="osrm-loading" style="display:none">⏳ Calculando rota via OSRM...</div>
+        <div id="osrm-status" class="osrm-loading" style="display:none">⏳ Calculando rota via OpenCage + OSRM...</div>
         <div class="sgrid" style="margin:10px 0">
           <div class="sc"><div class="sl">Preco/km</div><div class="sv" id="qp">—</div></div>
           <div class="sc"><div class="sl">Distancia OSRM</div><div class="sv" id="qkm">—</div></div>
@@ -199,7 +199,7 @@
         </div>
         <div class="ra">
           <button class="btn bp" onclick="criarCorrida()">Criar corrida on-chain</button>
-          <button class="btn bo bsm" onclick="calcularOSRM()">↻ Recalcular rota</button>
+          <button class="btn bo bsm" onclick="calcularOSRM()">↻ Calcular rota</button>
           <button class="btn bo bsm" onclick="refresh()">↻ Atualizar</button>
         </div>
       </div>
@@ -257,6 +257,9 @@
 <script>
 "use strict";
 
+/* ── CONFIGURACAO OPENCAGE ── */
+const OPENCAGE_API_KEY = "1287c5dc493e4db3bd392caeb16549e4";
+
 /* ── STORAGE ── */
 const SK="vc_addrs7", RM="vc_rides7";
 const sv=()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch{return{}}};
@@ -293,7 +296,6 @@ const AGOV=[
   "event DriverPriceUpdated(address indexed driver, uint256 newPrice)"
 ];
 
-// ── ABI atualizada para novo RideEscrow ──
 const AESC=[
   "function owner() view returns (address)",
   "function governance() view returns (address)",
@@ -305,15 +307,11 @@ const AESC=[
   "function rejectRide(uint256) external",
   "function cancelBeforeStart(uint256) external",
   "function startRide(uint256) external",
-  // ✅ confirmDestinationReached agora recebe kmPercorrido
   "function confirmDestinationReached(uint256,uint256) external",
-  // ✅ confirmRideCompletion agora recebe kmPercorrido
   "function confirmRideCompletion(uint256,uint256) external",
-  // ✅ cancelAfterStart agora e direto no RideEscrow com kmPercorrido
   "function cancelAfterStart(uint256,uint256) external",
   "function withdraw() external",
   "function pendingWithdrawals(address) view returns (uint256)",
-  // ✅ getRide atualizado — sem driverConfirmedDestinationAt
   "function getRide(uint256) view returns (tuple(uint256 id,address passenger,address driver,uint256 quotedPriceWei,string latOrigem,string lonOrigem,string latDestino,string lonDestino,uint256 createdAt,uint256 acceptedAt,uint256 startedAt,uint256 completedAt,uint8 status))",
   "function getRideCoords(uint256) view returns (string,string,string,string)",
   "event RideCreated(uint256 indexed rideId,address indexed passenger,address indexed driver,uint256 quotedPriceWei,uint256 createdAt)",
@@ -325,6 +323,21 @@ const AORACLE=["function getETHPrice() view returns (int256)"];
 const ORACLE_ADDR="0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07";
 let CO=null, ethUSD=0;
 const BRL_RATE=5.85;
+
+/* ── GEOCoding com OpenCage ── */
+async function geocodeOpenCage(endereco) {
+  const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(endereco)}&key=${OPENCAGE_API_KEY}&limit=1&language=pt&countrycode=br`;
+  
+  const response = await fetch(url);
+  const data = await response.json();
+  
+  if (!data.results || data.results.length === 0) {
+    throw new Error(`Endereço não encontrado: ${endereco}`);
+  }
+  
+  const { lat, lng } = data.results[0].geometry;
+  return { lat: lat.toString(), lon: lng.toString() };
+}
 
 /* ── OSRM ── */
 let osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};
@@ -435,39 +448,53 @@ async function carregarPrecoETH(){
   }
 }
 
-/* ── OSRM ── */
+/* ── CALCULAR ROTA COM OPENCAGE + OSRM ── */
 async function calcularOSRM(){
-  const or=document.getElementById("ror").value.trim();
-  const de=document.getElementById("rde").value.trim();
-  if(!or||!de) return;
-  const status=document.getElementById("osrm-status");
-  status.style.display="block";
-  status.textContent="⏳ Calculando rota via OSRM + OpenStreetMap...";
-  try{
-    const [r1,r2]=await Promise.all([
-      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(or)}&format=json&limit=1`).then(r=>r.json()),
-      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(de)}&format=json&limit=1`).then(r=>r.json()),
+  const or = document.getElementById("ror").value.trim();
+  const de = document.getElementById("rde").value.trim();
+  if(!or || !de) {
+    tt("Erro", "Preencha origem e destino", "e");
+    return;
+  }
+  
+  const status = document.getElementById("osrm-status");
+  status.style.display = "block";
+  status.textContent = "⏳ Geocodificando endereços via OpenCage...";
+  
+  try {
+    const [origem, destino] = await Promise.all([
+      geocodeOpenCage(or),
+      geocodeOpenCage(de)
     ]);
-    if(!r1.length) throw new Error("Origem nao encontrada.");
-    if(!r2.length) throw new Error("Destino nao encontrado.");
-    const lat1=parseFloat(r1[0].lat).toFixed(6), lon1=parseFloat(r1[0].lon).toFixed(6);
-    const lat2=parseFloat(r2[0].lat).toFixed(6), lon2=parseFloat(r2[0].lon).toFixed(6);
-    const osrm=await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`).then(r=>r.json());
-    if(osrm.code!=="Ok") throw new Error("OSRM nao encontrou rota.");
-    const km=(osrm.routes[0].distance/1000).toFixed(2);
-    osrmData={lat1,lon1,lat2,lon2,km:Number(km)};
-    document.getElementById("rlat1").value=lat1;
-    document.getElementById("rlon1").value=lon1;
-    document.getElementById("rlat2").value=lat2;
-    document.getElementById("rlon2").value=lon2;
-    document.getElementById("qkm").textContent=km+" km";
-    status.style.display="none";
-    lg("OSRM: "+km+" km","s");
+    
+    const lat1 = origem.lat, lon1 = origem.lon;
+    const lat2 = destino.lat, lon2 = destino.lon;
+    
+    status.textContent = "⏳ Calculando rota via OSRM...";
+    
+    const osrm = await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`)
+      .then(r => r.json());
+    
+    if(osrm.code !== "Ok") throw new Error("OSRM não encontrou rota");
+    
+    const km = (osrm.routes[0].distance / 1000).toFixed(2);
+    osrmData = { lat1, lon1, lat2, lon2, km: Number(km) };
+    
+    document.getElementById("rlat1").value = lat1;
+    document.getElementById("rlon1").value = lon1;
+    document.getElementById("rlat2").value = lat2;
+    document.getElementById("rlon2").value = lon2;
+    document.getElementById("qkm").textContent = km + " km";
+    
+    status.style.display = "none";
+    lg(`Rota calculada: ${km} km via OpenCage + OSRM`, "s");
+    tt("Rota calculada", `${km} km de distância`, "s");
     quote();
-  }catch(e){
-    status.textContent="❌ "+fe2(e);
-    lg("OSRM erro: "+fe2(e),"e");
-    tt("Erro OSRM",fe2(e),"e");
+    
+  } catch(e) {
+    status.textContent = "❌ " + fe2(e);
+    lg("Erro geocoding: " + fe2(e), "e");
+    tt("Erro de geocodificação", fe2(e), "e");
   }
 }
 
@@ -622,7 +649,8 @@ function renderStatus(){
     <div class="sc"><div class="sl">Gov→NFT</div><div class="sv ${ok2?"ok":"bad"}">${ok2?"✅ OK":"❌ Verificar"}</div></div>
     <div class="sc"><div class="sl">Escrow→Gov</div><div class="sv ${ok3?"ok":"bad"}">${ok3?"✅ OK":"❌ Verificar"}</div></div>
     <div class="sc"><div class="sl">Oracle Chainlink</div><div class="sv ok">✅ ${ethUSD>0?"ETH R$ "+(ethUSD*BRL_RATE).toFixed(2):"Carregando..."}</div></div>
-    <div class="sc"><div class="sl">OSRM</div><div class="sv ok">✅ Gratuito — sem API key</div></div>`;
+    <div class="sc"><div class="sl">Geocoding</div><div class="sv ok">✅ OpenCage (estavel)</div></div>
+    <div class="sc"><div class="sl">OSRM</div><div class="sv ok">✅ Roteamento gratuito</div></div>`;
   document.getElementById("cnote").innerHTML=
     (ok1?"✅":"❌ <b>Admin → DriverNFT.setGovernance()</b> precisa ser chamado!")+
     (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)));
@@ -671,7 +699,6 @@ async function carregarCorridas(){
   for(let i=1;i<=tot;i++){
     const r=await sc(()=>CE.getRide(i),null);if(!r)continue;
     const m=gm(i)||{};
-    // ✅ tuple atualizado — sem driverConfirmedDestinationAt
     list.push({
       id:Number(r[0]),pass:r[1],driv:r[2],qw:r[3],
       latOr:r[4],lonOr:r[5],latDe:r[6],lonDe:r[7],
@@ -736,10 +763,8 @@ function renderMinhasCorridas(){
   if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣️</div>Nenhuma corrida.</div>`;return}
   el.innerHTML=mine.map(r=>{
     let b="";
-    // Antes do inicio — devolve 100% ao passageiro
     if(r.st===1||r.st===2) b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
     if(r.st===2) b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
-    // Apos inicio — passageiro pode finalizar ou cancelar com km do taximetro
     if(r.st===3){
       b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
       b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},'passageiro')">Cancelar corrida</button>`;
@@ -919,13 +944,11 @@ async function aceitarCorrida(id){await tx("Aceitando #"+id,()=>CE.acceptRide(id
 async function rejeitarCorrida(id){await tx("Rejeitando #"+id,()=>CE.rejectRide(id),"Rejeitada #"+id,"ID "+id)}
 async function cancelarCorrida(id){await tx("Cancelando #"+id,()=>CE.cancelBeforeStart(id),"Cancelada #"+id,"ID "+id)}
 
-// Inicia corrida + taximetro
 async function iniciarCorrida(id){
   await tx("Iniciando #"+id,()=>CE.startRide(id),"Iniciada #"+id,"ID "+id);
   iniciarTaximetro(id);
 }
 
-// Motorista confirma destino — para taximetro e envia km
 function mostrarDivisao(id, km){
   const ride=ST.rides.find(r=>r.id===id);
   if(!ride)return;
@@ -952,7 +975,6 @@ async function confirmarDestino(id){
   );
 }
 
-// Passageiro confirma conclusao — para taximetro e envia km
 async function concluirCorrida(id){
   const km=pararTaximetro();
   mostrarDivisao(id, km);
@@ -964,10 +986,7 @@ async function concluirCorrida(id){
   );
 }
 
-// Cancelamento apos inicio — para taximetro e envia km proporcional
 async function cancelarAposInicio(id, quem="passageiro"){
-  // Passageiro cancela — minimo 1km (motorista perdeu tempo)
-  // Motorista cancela — km exato (responsabilidade dele)
   const minimo = quem === "passageiro";
   const km=pararTaximetro(minimo);
   tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km — "+km+" km cobrado","p");
