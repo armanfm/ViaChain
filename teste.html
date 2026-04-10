@@ -99,6 +99,7 @@
     .saque-box{background:rgba(34,197,94,.07);border:1px solid var(--green);border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
     .saque-val{color:var(--green);font-weight:700;font-size:1rem}
     .osrm-loading{color:var(--yellow);font-size:.8rem;margin-top:4px}
+    .taximetro-box{background:rgba(79,142,247,.07);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;font-size:.85rem;margin-top:8px;display:none}
     @keyframes si{from{opacity:0;transform:translateX(28px)}to{opacity:1}}
     @media(max-width:700px){#app{padding:14px 12px 78px}.rc,.ac{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.ra,.aa{flex-direction:column;align-items:stretch}.tabs{width:100%}}
   </style>
@@ -132,10 +133,6 @@
         <div class="fg"><label>DriverNFT</label><input id="anft" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>ViaChainGovernance</label><input id="agov" spellcheck="false" placeholder="0x..."/></div>
         <div class="fg"><label>RideEscrow</label><input id="aesc" spellcheck="false" placeholder="0x..."/></div>
-        <div class="fg"><label>Cancelamento.sol</label><input id="acancel" spellcheck="false" placeholder="0x..."/></div>
-        <!-- ✅ NOVO: campo Rota.sol -->
-        <div class="fg"><label>Rota.sol</label><input id="arota" spellcheck="false" placeholder="0x..."/></div>
-        <div class="fg"><label>Chainlink Subscription ID</label><input id="asubid" type="number" placeholder="Ex: 1234"/></div>
       </div>
       <div id="errbox"></div>
       <button class="btn bp" onclick="ligarContratos()">Entrar no app</button>
@@ -150,7 +147,7 @@
       <div class="notice" id="cnote"></div>
     </div>
 
-    <!-- SALDO PARA SACAR (Pull Payment) -->
+    <!-- SALDO PARA SACAR -->
     <div id="saque-section" style="display:none" class="sec">
       <div class="sect">💰 Saldo disponivel para saque</div>
       <div class="secs">Seu ETH esta disponivel para saque. Clique para receber na sua carteira.</div>
@@ -180,10 +177,7 @@
     <div id="tp-pass" class="tc on">
       <div class="sec">
         <div class="sect">➕ Criar corrida</div>
-        <div class="secs">
-          Selecione o motorista e preencha a rota. As coordenadas sao calculadas automaticamente
-          via OSRM (OpenStreetMap) — gratuito e sem API key.
-        </div>
+        <div class="secs">Selecione o motorista e preencha a rota. As coordenadas sao calculadas via OSRM (OpenStreetMap) — gratuito e sem API key.</div>
         <div class="grid">
           <div class="fg"><label>Motorista</label><select id="dsel" onchange="quote()"></select></div>
           <div class="fg"><label>Origem (endereco)</label><input id="ror" placeholder="Ex: Av. Boa Viagem, Recife" onchange="calcularOSRM()"/></div>
@@ -229,6 +223,10 @@
         </div>
         <div class="notice" id="meuPerfil">Carregando...</div>
       </div>
+      <!-- Taximetro visivel ao motorista durante corrida -->
+      <div id="taximetro-section" class="taximetro-box">
+        🚕 <b>Taximetro:</b> <span id="taximetro-km">0.00</span> km percorridos
+      </div>
       <div class="sec"><div class="sect">📥 Corridas para mim</div><div id="mpend" class="rl"><div class="empty"><div class="ei">📨</div>Nenhuma.</div></div></div>
       <div class="sec"><div class="sect">▶️ Em andamento</div><div id="mativo" class="rl"><div class="empty"><div class="ei">🚦</div>Nenhuma.</div></div></div>
     </div>
@@ -260,7 +258,7 @@
 "use strict";
 
 /* ── STORAGE ── */
-const SK="vc_addrs6", RM="vc_rides6";
+const SK="vc_addrs7", RM="vc_rides7";
 const sv=()=>{try{return JSON.parse(localStorage.getItem(SK)||"{}")}catch{return{}}};
 const ss=o=>localStorage.setItem(SK,JSON.stringify(o));
 const rm=()=>{try{return JSON.parse(localStorage.getItem(RM)||"{}")}catch{return{}}};
@@ -295,63 +293,97 @@ const AGOV=[
   "event DriverPriceUpdated(address indexed driver, uint256 newPrice)"
 ];
 
+// ── ABI atualizada para novo RideEscrow ──
 const AESC=[
   "function owner() view returns (address)",
   "function governance() view returns (address)",
   "function systemOperator() view returns (address)",
-  "function cancelamento() view returns (address)",
-  "function rota() view returns (address)",
   "function rideCounter() view returns (uint256)",
   "function setSystemOperator(address) external",
-  "function setCancelamento(address) external",
-  "function setRota(address) external",
   "function createRide(address,string,string,string,string) payable returns (uint256)",
   "function acceptRide(uint256) external",
   "function rejectRide(uint256) external",
   "function cancelBeforeStart(uint256) external",
   "function startRide(uint256) external",
-  "function confirmDestinationReached(uint256) external",
-  "function confirmRideCompletion(uint256) external",
-  "function finalizeAfterTimeout(uint256) external",
+  // ✅ confirmDestinationReached agora recebe kmPercorrido
+  "function confirmDestinationReached(uint256,uint256) external",
+  // ✅ confirmRideCompletion agora recebe kmPercorrido
+  "function confirmRideCompletion(uint256,uint256) external",
+  // ✅ cancelAfterStart agora e direto no RideEscrow com kmPercorrido
+  "function cancelAfterStart(uint256,uint256) external",
   "function withdraw() external",
-  "function getPendingWithdrawal(address) view returns (uint256)",
   "function pendingWithdrawals(address) view returns (uint256)",
-  "function getRide(uint256) view returns (tuple(uint256 id,address passenger,address driver,uint256 quotedPriceWei,string latOrigem,string lonOrigem,string latDestino,string lonDestino,uint256 createdAt,uint256 acceptedAt,uint256 startedAt,uint256 driverConfirmedDestinationAt,uint256 completedAt,uint8 status))",
+  // ✅ getRide atualizado — sem driverConfirmedDestinationAt
+  "function getRide(uint256) view returns (tuple(uint256 id,address passenger,address driver,uint256 quotedPriceWei,string latOrigem,string lonOrigem,string latDestino,string lonDestino,uint256 createdAt,uint256 acceptedAt,uint256 startedAt,uint256 completedAt,uint8 status))",
   "function getRideCoords(uint256) view returns (string,string,string,string)",
   "event RideCreated(uint256 indexed rideId,address indexed passenger,address indexed driver,uint256 quotedPriceWei,uint256 createdAt)",
-  "event PagamentoProporcionalDistribuido(uint256 indexed rideId,uint256 distanciaKm,uint256 paidToDriverWei,uint256 refundedToPassengerWei)",
+  "event PagamentoProporcionalDistribuido(uint256 indexed rideId,uint256 kmPercorrido,uint256 paidToDriverWei,uint256 refundedToPassengerWei)",
   "event Withdrawn(address indexed recipient,uint256 amount)"
-];
-
-const ACANCEL=[
-  "function cancelAfterStart(uint256,bytes) external",
-  "function setSystemOperator(address) external",
-  "function owner() view returns (address)"
 ];
 
 const AORACLE=["function getETHPrice() view returns (int256)"];
 const ORACLE_ADDR="0x636A95BceC2C0f5c819cdAeFd9f626Da4a947B07";
-let CO=null;
-let ethUSD=0;
+let CO=null, ethUSD=0;
 const BRL_RATE=5.85;
 
-/* ── OSRM state ── */
+/* ── OSRM ── */
 let osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};
+
+/* ── TAXIMETRO ── */
+let taximetro={rideId:null,watchId:null,kmTotal:0,ultimoPonto:null};
+
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function iniciarTaximetro(rideId){
+  taximetro.rideId=rideId;
+  taximetro.kmTotal=0;
+  taximetro.ultimoPonto=null;
+  document.getElementById("taximetro-section").style.display="block";
+  taximetro.watchId=navigator.geolocation.watchPosition(
+    (pos)=>{
+      const lat=pos.coords.latitude, lon=pos.coords.longitude;
+      if(taximetro.ultimoPonto){
+        const dist=haversine(taximetro.ultimoPonto.lat,taximetro.ultimoPonto.lon,lat,lon);
+        if(dist<0.5) taximetro.kmTotal+=dist;
+      }
+      taximetro.ultimoPonto={lat,lon};
+      document.getElementById("taximetro-km").textContent=taximetro.kmTotal.toFixed(2);
+    },
+    (err)=>lg("GPS erro: "+err.message,"e"),
+    {enableHighAccuracy:true,maximumAge:0,timeout:10000}
+  );
+  lg("Taximetro iniciado #"+rideId,"s");
+}
+
+function pararTaximetro(){
+  if(taximetro.watchId!==null){
+    navigator.geolocation.clearWatch(taximetro.watchId);
+    taximetro.watchId=null;
+  }
+  document.getElementById("taximetro-section").style.display="none";
+  lg("Taximetro parado — "+taximetro.kmTotal.toFixed(2)+" km","s");
+  return Math.max(1, Math.round(taximetro.kmTotal));
+}
 
 /* ── MAPS ── */
 const CAT={0:"Nenhuma",1:"Basico",2:"Conforto",3:"Luxo"};
 const DS={0:"Nenhum",1:"Pendente",2:"Aprovado",3:"Rejeitado",4:"Revogado"};
-const RS={0:"—",1:"Criada",2:"Aceita",3:"Iniciada",4:"Dest. confirmado",5:"Concluida",6:"Cancelada",7:"Rejeitada"};
-const RC={1:"cbl",2:"cye",3:"cpu",4:"cpu",5:"cgr",6:"cre",7:"cre"};
+const RS={0:"—",1:"Criada",2:"Aceita",3:"Iniciada",4:"Concluida",5:"Cancelada",6:"Rejeitada"};
+const RC={1:"cbl",2:"cye",3:"cpu",4:"cgr",5:"cre",6:"cre"};
 
 /* ── STATE ── */
 let P=null,SG=null,me="";
-let CN=null,CG=null,CE=null,CC=null;
+let CN=null,CG=null,CE=null;
 let AD={nft:"",gov:"",esc:""};
 let ST={drivers:[],rides:[],myP:null,
   no:"",go:"",eo:"",ng:"",gn:"",eg:"",sop:"",
-  iNo:false,iGo:false,iEo:false,iAppr:false,hNFT:false,
-  saqueWei:0n};
+  iNo:false,iGo:false,iEo:false,iAppr:false,hNFT:false,saqueWei:0n};
 
 /* ── UTILS ── */
 const H=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -395,7 +427,6 @@ async function carregarPrecoETH(){
     if(hd){hd.textContent="ETH R$ "+(ethUSD*BRL_RATE).toFixed(2);hd.style.display="inline";}
     lg("Oraculo Chainlink: ETH R$ "+(ethUSD*BRL_RATE).toFixed(2),"s");
   }catch(e){
-    console.warn("Oracle error:",e);
     ethUSD=0;
     const el=document.getElementById("nethpricebrl");
     if(el) el.textContent="Indisponivel";
@@ -407,43 +438,29 @@ async function calcularOSRM(){
   const or=document.getElementById("ror").value.trim();
   const de=document.getElementById("rde").value.trim();
   if(!or||!de) return;
-
   const status=document.getElementById("osrm-status");
   status.style.display="block";
   status.textContent="⏳ Calculando rota via OSRM + OpenStreetMap...";
-
   try{
     const [r1,r2]=await Promise.all([
       fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(or)}&format=json&limit=1`).then(r=>r.json()),
       fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(de)}&format=json&limit=1`).then(r=>r.json()),
     ]);
-
-    if(!r1.length) throw new Error("Origem nao encontrada no OpenStreetMap.");
-    if(!r2.length) throw new Error("Destino nao encontrado no OpenStreetMap.");
-
-    const lat1=parseFloat(r1[0].lat).toFixed(6);
-    const lon1=parseFloat(r1[0].lon).toFixed(6);
-    const lat2=parseFloat(r2[0].lat).toFixed(6);
-    const lon2=parseFloat(r2[0].lon).toFixed(6);
-
-    const osrm=await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`
-    ).then(r=>r.json());
-
-    if(osrm.code!=="Ok") throw new Error("OSRM nao encontrou rota entre os pontos.");
-
+    if(!r1.length) throw new Error("Origem nao encontrada.");
+    if(!r2.length) throw new Error("Destino nao encontrado.");
+    const lat1=parseFloat(r1[0].lat).toFixed(6), lon1=parseFloat(r1[0].lon).toFixed(6);
+    const lat2=parseFloat(r2[0].lat).toFixed(6), lon2=parseFloat(r2[0].lon).toFixed(6);
+    const osrm=await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`).then(r=>r.json());
+    if(osrm.code!=="Ok") throw new Error("OSRM nao encontrou rota.");
     const km=(osrm.routes[0].distance/1000).toFixed(2);
-
     osrmData={lat1,lon1,lat2,lon2,km:Number(km)};
-
     document.getElementById("rlat1").value=lat1;
     document.getElementById("rlon1").value=lon1;
     document.getElementById("rlat2").value=lat2;
     document.getElementById("rlon2").value=lon2;
     document.getElementById("qkm").textContent=km+" km";
-
     status.style.display="none";
-    lg("OSRM: "+km+" km calculados","s");
+    lg("OSRM: "+km+" km","s");
     quote();
   }catch(e){
     status.textContent="❌ "+fe2(e);
@@ -454,10 +471,7 @@ async function calcularOSRM(){
 
 /* ── CONECTAR ── */
 async function conectar(){
-  if(!window.ethereum){
-    tt("MetaMask nao encontrada","Instale a extensao MetaMask.","e");
-    return;
-  }
+  if(!window.ethereum){tt("MetaMask nao encontrada","Instale a extensao MetaMask.","e");return;}
   try{
     lg("Abrindo MetaMask...","p");
     const contas=await window.ethereum.request({method:"eth_requestAccounts"});
@@ -479,15 +493,9 @@ async function conectar(){
     document.getElementById("anft").value=saved.nft||"";
     document.getElementById("agov").value=saved.gov||"";
     document.getElementById("aesc").value=saved.esc||"";
-    document.getElementById("acancel").value=saved.cancel||"";
-    document.getElementById("arota").value=saved.rota||""; // ✅ restaura Rota.sol salvo
-    document.getElementById("asubid").value=saved.subid||""; // ✅ restaura Subscription ID salvo
     window.ethereum.on("accountsChanged",()=>location.reload());
     window.ethereum.on("chainChanged",()=>location.reload());
-  }catch(e){
-    lg("Erro: "+fe2(e),"e");
-    tt("Erro de conexao",fe2(e),"e");
-  }
+  }catch(e){lg("Erro: "+fe2(e),"e");tt("Erro de conexao",fe2(e),"e");}
 }
 
 async function ligarContratos(){
@@ -497,7 +505,7 @@ async function ligarContratos(){
     const nft=document.getElementById("anft").value.trim();
     const gov=document.getElementById("agov").value.trim();
     const esc=document.getElementById("aesc").value.trim();
-    if(!nft||!gov||!esc) throw new Error("Preencha os 3 enderecos obrigatorios.");
+    if(!nft||!gov||!esc) throw new Error("Preencha os 3 enderecos.");
     if(!ethers.isAddress(nft)) throw new Error("Endereco DriverNFT invalido.");
     if(!ethers.isAddress(gov)) throw new Error("Endereco Governance invalido.");
     if(!ethers.isAddress(esc)) throw new Error("Endereco RideEscrow invalido.");
@@ -507,103 +515,14 @@ async function ligarContratos(){
     if(c2==="0x") throw new Error("Governance: sem contrato nesse endereco.");
     if(c3==="0x") throw new Error("RideEscrow: sem contrato nesse endereco.");
     AD={nft:ethers.getAddress(nft),gov:ethers.getAddress(gov),esc:ethers.getAddress(esc)};
+    ss(AD);
     CN=new ethers.Contract(AD.nft,ANFT,SG);
     CG=new ethers.Contract(AD.gov,AGOV,SG);
     CE=new ethers.Contract(AD.esc,AESC,SG);
     CO=new ethers.Contract(ORACLE_ADDR,AORACLE,P);
-
-    // ── Cancelamento.sol ──
-    const cancelAddr=document.getElementById("acancel").value.trim();
-    if(cancelAddr&&ethers.isAddress(cancelAddr)){
-      const cancelChecked=ethers.getAddress(cancelAddr);
-      CC=new ethers.Contract(cancelChecked,ACANCEL,SG);
-      AD.cancel=cancelChecked;
-      // Verifica se setCancelamento() ja foi chamado no RideEscrow
-      const cancelAtual=await sc(()=>CE.cancelamento(),ethers.ZeroAddress);
-      if(cancelAtual.toLowerCase()!==cancelChecked.toLowerCase()){
-        lg("Chamando setCancelamento() no RideEscrow...","p");
-        tt("Aguardando MetaMask","Confirme setCancelamento() no contrato.","p");
-        try{
-          const txc=await CE.setCancelamento(cancelChecked);
-          await txc.wait();
-          lg("setCancelamento() OK!","s");
-          tt("Cancelamento.sol configurado!",sh(cancelChecked),"s");
-        }catch(e){
-          lg("Erro setCancelamento: "+fe2(e),"e");
-          tt("Erro ao chamar setCancelamento()",fe2(e),"e");
-        }
-      } else {
-        lg("Cancelamento.sol ja configurado no contrato","s");
-      }
-    } else {
-      lg("Cancelamento.sol nao configurado","p");
-    }
-
-    // ── ✅ Rota.sol — conecta e chama setRota() e setSubscriptionId() se necessario ──
-    const rotaAddr=document.getElementById("arota").value.trim();
-    const subId=document.getElementById("asubid").value.trim();
-    if(rotaAddr&&ethers.isAddress(rotaAddr)){
-      const rotaChecked=ethers.getAddress(rotaAddr);
-      AD.rota=rotaChecked;
-
-      // ABI minima do Rota.sol
-      const AROTA=[
-        "function subscriptionId() view returns (uint64)",
-        "function setSubscriptionId(uint64) external"
-      ];
-      const CR=new ethers.Contract(rotaChecked,AROTA,SG);
-
-      // Verifica se setRota() ja foi chamado com esse endereco
-      const rotaAtual=await sc(()=>CE.rota(),ethers.ZeroAddress);
-      if(rotaAtual.toLowerCase()!==rotaChecked.toLowerCase()){
-        lg("Chamando setRota() no RideEscrow...","p");
-        tt("Aguardando MetaMask","Confirme setRota() no contrato.","p");
-        try{
-          const tx=await CE.setRota(rotaChecked);
-          await tx.wait();
-          lg("setRota() OK — Rota.sol configurado!","s");
-          tt("Rota.sol configurado!",sh(rotaChecked),"s");
-        }catch(e){
-          lg("Erro setRota: "+fe2(e),"e");
-          tt("Erro ao chamar setRota()",fe2(e),"e");
-        }
-      } else {
-        lg("Rota.sol ja configurado no contrato","s");
-      }
-
-      // ✅ Verifica e atualiza subscriptionId se necessario
-      if(subId&&Number(subId)>0){
-        AD.subid=subId;
-        try{
-          const subAtual=await CR.subscriptionId();
-          if(Number(subAtual)!==Number(subId)){
-            lg("Chamando setSubscriptionId("+subId+")...","p");
-            tt("Aguardando MetaMask","Confirme setSubscriptionId() no Rota.sol.","p");
-            const tx2=await CR.setSubscriptionId(Number(subId));
-            await tx2.wait();
-            lg("setSubscriptionId("+subId+") OK!","s");
-            tt("Subscription ID configurado!","ID: "+subId,"s");
-          } else {
-            lg("Subscription ID ja configurado: "+subId,"s");
-          }
-        }catch(e){
-          lg("Erro setSubscriptionId: "+fe2(e),"e");
-          tt("Erro ao setar Subscription ID",fe2(e),"e");
-        }
-      } else {
-        lg("Subscription ID nao informado — Chainlink Functions pode nao funcionar","p");
-      }
-
-    } else {
-      lg("Rota.sol nao informado — confirmar destino indisponivel","p");
-    }
-
-    // Salva todos os enderecos incluindo rota e subid
-    ss({...AD});
-
     await carregarPrecoETH();
     lg("Contratos OK!","s");
-    tt("Contratos conectados","DriverNFT + Governance + Escrow + Rota + Oracle","s");
+    tt("Contratos conectados","DriverNFT + Governance + Escrow + Oracle","s");
     document.getElementById("s2").style.display="none";
     document.getElementById("s3").style.display="block";
     await refresh();
@@ -671,12 +590,7 @@ function renderSaque(){
 }
 
 async function sacar(){
-  await tx(
-    "Sacando ETH...",
-    ()=>CE.withdraw(),
-    "Saque realizado!",
-    "ETH transferido para sua carteira."
-  );
+  await tx("Sacando ETH...",()=>CE.withdraw(),"Saque realizado!","ETH transferido para sua carteira.");
 }
 
 function pp(r){
@@ -698,21 +612,18 @@ function renderStatus(){
   const ok1=ST.ng.toLowerCase()===AD.gov.toLowerCase();
   const ok2=ST.gn.toLowerCase()===AD.nft.toLowerCase();
   const ok3=ST.eg.toLowerCase()===AD.gov.toLowerCase();
-  const okRota=!!AD.rota;
   document.getElementById("cstatus").innerHTML=`
     <div class="sc"><div class="sl">DriverNFT</div><div class="sv">${H(sh(AD.nft))}</div></div>
     <div class="sc"><div class="sl">Governance</div><div class="sv">${H(sh(AD.gov))}</div></div>
     <div class="sc"><div class="sl">RideEscrow</div><div class="sv">${H(sh(AD.esc))}</div></div>
-    <div class="sc"><div class="sl">Rota.sol</div><div class="sv ${okRota?"ok":"bad"}">${okRota?"✅ "+sh(AD.rota):"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">NFT→Gov</div><div class="sv ${ok1?"ok":"bad"}">${ok1?"✅ OK":"❌ Nao configurado"}</div></div>
     <div class="sc"><div class="sl">Gov→NFT</div><div class="sv ${ok2?"ok":"bad"}">${ok2?"✅ OK":"❌ Verificar"}</div></div>
     <div class="sc"><div class="sl">Escrow→Gov</div><div class="sv ${ok3?"ok":"bad"}">${ok3?"✅ OK":"❌ Verificar"}</div></div>
     <div class="sc"><div class="sl">Oracle Chainlink</div><div class="sv ok">✅ ${ethUSD>0?"ETH R$ "+(ethUSD*BRL_RATE).toFixed(2):"Carregando..."}</div></div>
-    <div class="sc"><div class="sl">OSRM (OpenStreetMap)</div><div class="sv ok">✅ Gratuito — sem API key</div></div>`;
+    <div class="sc"><div class="sl">OSRM</div><div class="sv ok">✅ Gratuito — sem API key</div></div>`;
   document.getElementById("cnote").innerHTML=
     (ok1?"✅":"❌ <b>Admin → DriverNFT.setGovernance()</b> precisa ser chamado!")+
-    (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)))+
-    (okRota?"<br>✅ Rota.sol configurado no escrow.":"<br>❌ <b>Informe o endereco do Rota.sol para confirmar destino.</b>");
+    (ok3?"<br>✅ RideEscrow aponta para Governance.":"<br>ℹ️ RideEscrow.governance: "+H(sh(ST.eg)));
 }
 
 async function carregarDrivers(){
@@ -727,10 +638,7 @@ async function carregarDrivers(){
       CG.queryFilter(CG.filters.DriverRevoked(),fb,lb),
       CG.queryFilter(CG.filters.DriverPriceUpdated(),fb,lb),
     ]);
-  }catch(err){
-    lg("queryFilter falhou, usando fallback","p");
-    console.warn("queryFilter error:",err);
-  }
+  }catch(err){lg("queryFilter falhou","p");}
   const set=new Set();
   for(const arr of evs)for(const e of arr){
     const a=e.args?.driver||e.args?.[0];
@@ -761,10 +669,11 @@ async function carregarCorridas(){
   for(let i=1;i<=tot;i++){
     const r=await sc(()=>CE.getRide(i),null);if(!r)continue;
     const m=gm(i)||{};
+    // ✅ tuple atualizado — sem driverConfirmedDestinationAt
     list.push({
       id:Number(r[0]),pass:r[1],driv:r[2],qw:r[3],
       latOr:r[4],lonOr:r[5],latDe:r[6],lonDe:r[7],
-      cAt:Number(r[8]),aAt:Number(r[9]),stAt:Number(r[10]),dcAt:Number(r[11]),cpAt:Number(r[12]),st:Number(r[13]),
+      cAt:Number(r[8]),aAt:Number(r[9]),stAt:Number(r[10]),cpAt:Number(r[11]),st:Number(r[12]),
       or:m.or||"(nao salvo)",de:m.de||"(nao salvo)",km:m.km||"—"
     });
   }
@@ -775,7 +684,7 @@ async function carregarCorridas(){
 function renderStats(){
   document.getElementById("ndrivers").textContent=ST.drivers.filter(d=>d.status===2).length;
   document.getElementById("npending").textContent=ST.drivers.filter(d=>d.status===1).length;
-  document.getElementById("nrides").textContent=ST.rides.filter(r=>[1,2,3,4].includes(r.st)).length;
+  document.getElementById("nrides").textContent=ST.rides.filter(r=>[1,2,3].includes(r.st)).length;
 }
 
 function renderDriverSelect(){
@@ -788,10 +697,7 @@ function renderDriverSelect(){
 function quote(){
   const addr=document.getElementById("dsel").value;
   const d=ST.drivers.find(x=>x.addr.toLowerCase()===addr?.toLowerCase());
-  if(!d){
-    ["qp","qt","qc","qtbrl"].forEach(x=>document.getElementById(x).textContent="—");
-    return;
-  }
+  if(!d){["qp","qt","qc","qtbrl"].forEach(x=>document.getElementById(x).textContent="—");return;}
   const km=osrmData.km||0;
   const pw=BigInt(d.priceWei);
   const tot=pw*BigInt(Math.round(km));
@@ -802,8 +708,7 @@ function quote(){
   if(!document.getElementById("qkm").textContent||document.getElementById("qkm").textContent==="—")
     document.getElementById("qkm").textContent=km>0?km+" km":"Calcule a rota";
   if(ethUSD>0){
-    const brl=(totETH*ethUSD*BRL_RATE).toFixed(2);
-    document.getElementById("qtbrl").textContent="R$ "+brl;
+    document.getElementById("qtbrl").textContent="R$ "+(totETH*ethUSD*BRL_RATE).toFixed(2);
   } else {
     document.getElementById("qtbrl").textContent="Oraculo indisponivel";
   }
@@ -826,18 +731,17 @@ function rc(r,btns){
 function renderMinhasCorridas(){
   const el=document.getElementById("minhas");
   const mine=ST.rides.filter(r=>r.pass.toLowerCase()===me.toLowerCase());
-  if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣‍</div>Nenhuma corrida.</div>`;return}
+  if(!mine.length){el.innerHTML=`<div class="empty"><div class="ei">🛣️</div>Nenhuma corrida.</div>`;return}
   el.innerHTML=mine.map(r=>{
     let b="";
-    if(r.st===1||r.st===2)b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
-    if(r.st===2)b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
+    // Antes do inicio — devolve 100% ao passageiro
+    if(r.st===1||r.st===2) b+=`<button class="btn bd bsm bfull" onclick="cancelarCorrida(${r.id})">Cancelar</button>`;
+    if(r.st===2) b+=`<button class="btn bp bsm bfull" onclick="iniciarCorrida(${r.id})">Iniciar</button>`;
+    // Apos inicio — passageiro pode finalizar ou cancelar com km do taximetro
     if(r.st===3){
-      const ld2=encodeURIComponent(r.latDe||"");
-      const nd2=encodeURIComponent(r.lonDe||"");
-      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld2}'),decodeURIComponent('${nd2}'))">Cancelar corrida</button>`;
+      b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id})">Cancelar corrida</button>`;
     }
-    if(r.st===4)b+=`<button class="btn bs bsm bfull" onclick="concluirCorrida(${r.id})">Confirmar conclusao</button>`;
-    if(r.st===4)b+=`<button class="btn bo bsm bfull" onclick="timeout(${r.id})">Timeout</button>`;
     return rc(r,b);
   }).join("");
 }
@@ -865,15 +769,13 @@ function renderMotPendentes(){
 
 function renderMotAtivos(){
   const el=document.getElementById("mativo");
-  const list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&[2,3,4].includes(r.st));
+  const list=ST.rides.filter(r=>r.driv.toLowerCase()===me.toLowerCase()&&[2,3].includes(r.st));
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">🚦</div>Nenhuma.</div>`;return}
   el.innerHTML=list.map(r=>{
     let b="";
     if(r.st===3){
       b+=`<button class="btn bp bsm bfull" onclick="confirmarDestino(${r.id})">Confirmar destino</button>`;
-      const ld=encodeURIComponent(r.latDe||"");
-      const nd=encodeURIComponent(r.lonDe||"");
-      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id},decodeURIComponent('${ld}'),decodeURIComponent('${nd}'))">Cancelar corrida</button>`;
+      b+=`<button class="btn bd bsm bfull" onclick="cancelarAposInicio(${r.id})">Cancelar corrida</button>`;
     }
     return rc(r,b);
   }).join("");
@@ -927,7 +829,7 @@ async function tx(msg,fn,ok,det){
   lg(msg,"p");tt("Aguardando MetaMask","Confirme a transacao.","p");
   try{
     const t=await fn();
-    lg("Tx enviada, aguardando confirmacao...","p");
+    lg("Tx enviada...","p");
     await t.wait();
     lg(ok,"s");tt("Sucesso",det,"s");
     await new Promise(r=>setTimeout(r,2000));
@@ -936,7 +838,7 @@ async function tx(msg,fn,ok,det){
     const msg2=fe2(e);
     lg("Erro: "+msg2,"e");tt("Erro",msg2,"e");
     if(String(e.code)!=="4001"){
-      lg("Recarregando mesmo assim...","p");
+      lg("Recarregando...","p");
       await new Promise(r=>setTimeout(r,2000));
       await refresh();
     }
@@ -953,7 +855,6 @@ async function setSop(){
   if(!ethers.isAddress(v)){tt("Endereco invalido","","e");return}
   await tx("setSystemOperator...",()=>CE.setSystemOperator(v),"systemOperator atualizado.",sh(v));
 }
-
 async function solicitarCadastro(){
   const m=document.getElementById("dm").value.trim();
   const p=document.getElementById("dp").value.trim();
@@ -985,43 +886,25 @@ async function criarCorrida(){
     const da=document.getElementById("dsel").value;
     const or=document.getElementById("ror").value.trim();
     const de=document.getElementById("rde").value.trim();
-    if(!ethers.isAddress(da))throw new Error("Selecione um motorista.");
-    if(!or||!de)throw new Error("Preencha origem e destino.");
-    if(!osrmData.lat1||!osrmData.lon1||!osrmData.lat2||!osrmData.lon2)
-      throw new Error("Calcule a rota primeiro clicando em 'Recalcular rota'.");
-    if(osrmData.km<=0) throw new Error("Distancia invalida. Recalcule a rota.");
-
+    if(!ethers.isAddress(da)) throw new Error("Selecione um motorista.");
+    if(!or||!de) throw new Error("Preencha origem e destino.");
+    if(!osrmData.lat1||!osrmData.km||osrmData.km<=0) throw new Error("Calcule a rota primeiro.");
     const pw=await CG.getDriverPrice(da);
-    if(pw<=0n)throw new Error("Motorista com preco invalido.");
+    if(pw<=0n) throw new Error("Motorista com preco invalido.");
     const tot=pw*BigInt(Math.round(osrmData.km));
-
     lg("Criando corrida...","p");
     tt("Aguardando MetaMask","Valor: "+fe(tot)+" ETH — "+osrmData.km+" km","p");
-
-    const t=await CE.createRide(
-      da,
-      osrmData.lat1,
-      osrmData.lon1,
-      osrmData.lat2,
-      osrmData.lon2,
-      {value:tot}
-    );
+    const t=await CE.createRide(da,osrmData.lat1,osrmData.lon1,osrmData.lat2,osrmData.lon2,{value:tot});
     const rec=await t.wait();
     let rid=null;
     for(const l of rec.logs){
-      try{
-        const p=CE.interface.parseLog(l);
-        if(p?.name==="RideCreated"){rid=Number(p.args[0]);break}
-      }catch{}
+      try{const p=CE.interface.parseLog(l);if(p?.name==="RideCreated"){rid=Number(p.args[0]);break}}catch{}
     }
-    if(!rid)throw new Error("Corrida criada mas ID nao encontrado.");
+    if(!rid) throw new Error("Corrida criada mas ID nao encontrado.");
     sm(rid,{or,de,km:osrmData.km});
     document.getElementById("ror").value="";
     document.getElementById("rde").value="";
-    document.getElementById("rlat1").value="";
-    document.getElementById("rlon1").value="";
-    document.getElementById("rlat2").value="";
-    document.getElementById("rlon2").value="";
+    ["rlat1","rlon1","rlat2","rlon2"].forEach(id=>document.getElementById(id).value="");
     osrmData={lat1:"",lon1:"",lat2:"",lon2:"",km:0};
     document.getElementById("qkm").textContent="—";
     lg("Corrida #"+rid+" criada!","s");
@@ -1034,130 +917,47 @@ async function aceitarCorrida(id){await tx("Aceitando #"+id,()=>CE.acceptRide(id
 async function rejeitarCorrida(id){await tx("Rejeitando #"+id,()=>CE.rejectRide(id),"Rejeitada #"+id,"ID "+id)}
 async function cancelarCorrida(id){await tx("Cancelando #"+id,()=>CE.cancelBeforeStart(id),"Cancelada #"+id,"ID "+id)}
 
-async function cancelarAposInicio(rideId, latDe, lonDe){
-  try{
-    lg("Capturando GPS atual...","p");
-    tt("Aguardando GPS","Permita o acesso a localizacao.","p");
-
-    const pos = await new Promise((res,rej)=>
-      navigator.geolocation.getCurrentPosition(res, rej, {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      })
-    );
-
-    const lat1 = pos.coords.latitude.toFixed(6);
-    const lon1 = pos.coords.longitude.toFixed(6);
-
-    lg("GPS: "+lat1+","+lon1+" — codificando...","p");
-
-    const coords = ethers.AbiCoder.defaultAbiCoder().encode(
-      ["string","string","string","string"],
-      [lat1, lon1, String(latDe), String(lonDe)]
-    );
-
-    await tx(
-      "Cancelando com calculo proporcional...",
-      ()=>CC.cancelAfterStart(rideId, coords),
-      "Cancelamento solicitado!",
-      "Chainlink OSRM calculando valor proporcional ao percorrido..."
-    );
-  }catch(e){
-    if(e.code===1) tt("GPS negado","Permita o acesso a localizacao nas configuracoes do navegador.","e");
-    else if(e.code===3) tt("GPS timeout","Nao foi possivel obter localizacao. Tente novamente.","e");
-    else tt("Erro cancelamento",fe2(e),"e");
-    lg("Erro GPS/cancelamento: "+fe2(e),"e");
-  }
-}
-/* ── TAXÍMETRO ── */
-let taximetro = {
-  rideId: null,
-  watchId: null,
-  kmTotal: 0,
-  ultimoPonto: null,
-  intervalo: null
-};
-
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 +
-            Math.cos(lat1 * Math.PI/180) *
-            Math.cos(lat2 * Math.PI/180) *
-            Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-function iniciarTaximetro(rideId) {
-  taximetro.rideId  = rideId;
-  taximetro.kmTotal = 0;
-  taximetro.ultimoPonto = null;
-
-  taximetro.watchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-      if (taximetro.ultimoPonto) {
-        const dist = haversine(
-          taximetro.ultimoPonto.lat,
-          taximetro.ultimoPonto.lon,
-          lat, lon
-        );
-        // Ignora saltos absurdos (GPS instavel)
-        if (dist < 0.5) taximetro.kmTotal += dist;
-      }
-      taximetro.ultimoPonto = { lat, lon };
-      atualizarTaximetroUI();
-    },
-    (err) => lg("GPS erro: " + err.message, "e"),
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-  );
-  lg("Taximetro iniciado para corrida #" + rideId, "s");
-}
-
-function pararTaximetro() {
-  if (taximetro.watchId !== null) {
-    navigator.geolocation.clearWatch(taximetro.watchId);
-    taximetro.watchId = null;
-  }
-  lg("Taximetro parado — " + taximetro.kmTotal.toFixed(2) + " km percorridos", "s");
-}
-
-function atualizarTaximetroUI() {
-  const km = taximetro.kmTotal.toFixed(2);
-  // Atualiza o chip de km na corrida ativa
-  document.querySelectorAll(".chip.cpu").forEach(el => {
-    if (el.closest("[data-ride-id='" + taximetro.rideId + "']")) {
-      el.textContent = km + " km";
-    }
-  });
-  lg("Taximetro: " + km + " km", "i");
-}
-
-async function iniciarCorrida(id) {
-  await tx("Iniciando #"+id, ()=>CE.startRide(id), "Iniciada #"+id, "ID "+id);
-  // Inicia taximetro apos confirmar transacao
+// Inicia corrida + taximetro
+async function iniciarCorrida(id){
+  await tx("Iniciando #"+id,()=>CE.startRide(id),"Iniciada #"+id,"ID "+id);
   iniciarTaximetro(id);
 }
 
-async function confirmarDestino(id) {
-  // Para o taximetro e pega km total percorrido
-  pararTaximetro();
-  const kmPercorrido = Math.round(taximetro.kmTotal);
-  lg("Distancia percorrida: " + taximetro.kmTotal.toFixed(2) + " km → enviando " + kmPercorrido + " km ao contrato", "s");
-  tt("Taximetro", taximetro.kmTotal.toFixed(2) + " km percorridos", "s");
-
+// Motorista confirma destino — para taximetro e envia km
+async function confirmarDestino(id){
+  const km=pararTaximetro();
+  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos","s");
   await tx(
     "Confirmando destino #"+id,
-    ()=>CE.confirmDestinationReached(id),
+    ()=>CE.confirmDestinationReached(id, km),
     "Destino confirmado #"+id,
-    "Processando pagamento proporcional..."
+    "Pagamento proporcional distribuido — "+km+" km"
   );
 }
-async function concluirCorrida(id){await tx("Concluindo #"+id,()=>CE.confirmRideCompletion(id),"Concluida #"+id,"ID "+id)}
-async function timeout(id){await tx("Timeout #"+id,()=>CE.finalizeAfterTimeout(id),"Timeout #"+id,"ID "+id)}
+
+// Passageiro confirma conclusao — para taximetro e envia km
+async function concluirCorrida(id){
+  const km=pararTaximetro();
+  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos","s");
+  await tx(
+    "Concluindo #"+id,
+    ()=>CE.confirmRideCompletion(id, km),
+    "Concluida #"+id,
+    "Pagamento proporcional distribuido — "+km+" km"
+  );
+}
+
+// Cancelamento apos inicio — para taximetro e envia km proporcional
+async function cancelarAposInicio(id){
+  const km=pararTaximetro();
+  tt("Taximetro",""+taximetro.kmTotal.toFixed(2)+" km percorridos — cancelando","p");
+  await tx(
+    "Cancelando #"+id,
+    ()=>CE.cancelAfterStart(id, km),
+    "Cancelada #"+id,
+    "Pagamento proporcional ao percorrido — "+km+" km"
+  );
+}
 
 function tab(n){
   const ns=["pass","moto","adm"];
@@ -1168,4 +968,4 @@ function tab(n){
 </script>
 </body>
 </html>
-tml>
+
