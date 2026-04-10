@@ -240,6 +240,24 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         emit DestinationConfirmedByDriver(rideId, msg.sender, kmPercorrido, block.timestamp);
     }
 
+    // Passageiro finaliza a corrida — tambem pode confirmar destino
+    function confirmRideCompletion(
+        uint256 rideId,
+        uint256 kmPercorrido
+    ) external {
+        Ride storage ride = rides[rideId];
+        require(ride.id != 0, "Ride does not exist");
+        require(msg.sender == ride.passenger, "Only passenger can confirm");
+        require(ride.status == RideStatus.STARTED, "Ride not started");
+        require(kmPercorrido > 0, "Invalid km");
+
+        ride.status                       = RideStatus.DRIVER_CONFIRMED_DESTINATION;
+        ride.driverConfirmedDestinationAt = block.timestamp;
+
+        // Chainlink valida o km e distribui proporcional
+        IRota(rota).validarKm(rideId, kmPercorrido);
+    }
+
     // Timeout — motorista recebe tudo
     function finalizeAfterTimeout(uint256 rideId) external nonReentrant {
         Ride storage ride = rides[rideId];
@@ -324,4 +342,5 @@ contract RideEscrow is ReentrancyGuard, Ownable {
         return pendingWithdrawals[account];
     }
 }
+
 
