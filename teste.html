@@ -180,8 +180,8 @@
         <div class="secs">Selecione o motorista e preencha a rota. As coordenadas sao calculadas via OSRM (OpenStreetMap) — gratuito e sem API key.</div>
         <div class="grid">
           <div class="fg"><label>Motorista</label><select id="dsel" onchange="quote()"></select></div>
-          <div class="fg"><label>Origem (endereco)</label><input id="ror" placeholder="Ex: Av. Boa Viagem, Recife" onchange="calcularOSRM()"/></div>
-          <div class="fg"><label>Destino (endereco)</label><input id="rde" placeholder="Ex: Shopping Recife" onchange="calcularOSRM()"/></div>
+          <div class="fg"><label>Origem (endereco)</label><input id="ror" placeholder="Ex: Av. Boa Viagem, Recife" onblur="calcularOSRM()"/></div>
+          <div class="fg"><label>Destino (endereco)</label><input id="rde" placeholder="Ex: Shopping Recife" onblur="calcularOSRM()"/></div>
         </div>
         <div class="grid2" style="margin-bottom:10px">
           <div class="fg"><label>Lat Origem</label><input id="rlat1" placeholder="Calculado pelo OSRM" readonly/></div>
@@ -968,4 +968,3 @@ function tab(n){
 </script>
 </body>
 </html>
-
